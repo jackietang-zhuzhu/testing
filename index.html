@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#123540">
+    <title>RT LorryLink</title>
+
+    <link rel="icon" type="image/png" href="RT.png">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/remixicon@3.5.0/fonts/remixicon.css" rel="stylesheet">
+    <!-- Supabase JS Library -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body class="app-body">
+
+    <header class="app-header">
+        <div class="brand">
+            <span class="brand-mark"><i class="ri-truck-line"></i></span>
+            <span class="brand-name">RT LorryLink</span>
+        </div>
+        <button id="logout-btn" class="btn btn-ghost btn-sm hidden"><i class="ri-logout-box-r-line"></i> Log out</button>
+    </header>
+
+    <main class="app-main" id="main-content">
+
+        <!-- VIEW: LOGIN -->
+        <div id="view-login" class="view view-center flex">
+            <div class="auth-wrap">
+                <div class="auth-head">
+                    <h2 class="auth-title">Sign in</h2>
+                    <p class="auth-sub">See today's loads and bids.</p>
+                </div>
+                <div class="panel">
+                    <form id="login-form" class="form-stack">
+                        <div class="field">
+                            <label class="label" for="login-email">Email address</label>
+                            <input type="email" id="login-email" class="input" autocomplete="email" required>
+                        </div>
+                        <div class="field">
+                            <label class="label" for="login-password">Password</label>
+                            <input type="password" id="login-password" class="input" autocomplete="current-password" required>
+                        </div>
+                        <div style="text-align:right">
+                            <button type="button" onclick="app.showView('forgotPassword')" class="link-btn" style="font-size:.8125rem">Forgot password?</button>
+                        </div>
+                        <button type="submit" class="btn btn-primary btn-block">Log in</button>
+                    </form>
+                </div>
+                <p class="auth-foot">New transporter? <button onclick="app.openRegister('transporter')" class="link-btn">Register as transporter</button></p>
+                <p class="auth-foot" style="margin-top:6px">Need to send us a job? <button onclick="app.openRegister('customer')" class="link-btn">Register as customer</button></p>
+            </div>
+        </div>
+
+        <!-- VIEW: REGISTER (transporter or customer) -->
+        <div id="view-register" class="view view-center hidden">
+            <div class="auth-wrap">
+                <div class="auth-head">
+                    <h2 class="auth-title" id="reg-title">Register as transporter</h2>
+                    <p class="auth-sub" id="reg-sub">Create a transporter account to bid on loads. We'll email you a link to confirm your address.</p>
+                </div>
+                <div class="panel">
+                    <form id="register-form" class="form-stack">
+                        <input type="hidden" id="reg-role" value="transporter">
+                        <div class="field">
+                            <label class="label" for="reg-company">Company name</label>
+                            <input type="text" id="reg-company" class="input" autocomplete="organization" required>
+                        </div>
+                        <div class="field">
+                            <label class="label" for="reg-contact">Contact person</label>
+                            <input type="text" id="reg-contact" class="input" autocomplete="name" required>
+                        </div>
+                        <div class="field">
+                            <label class="label" for="reg-phone">Phone number</label>
+                            <input type="tel" id="reg-phone" class="input" autocomplete="tel" required>
+                        </div>
+                        <div class="field">
+                            <label class="label" for="reg-email">Email address</label>
+                            <input type="email" id="reg-email" class="input" autocomplete="email" required>
+                        </div>
+                        <div class="field">
+                            <label class="label" for="reg-password">Password</label>
+                            <input type="password" id="reg-password" class="input" autocomplete="new-password" required minlength="6">
+                            <span class="hint">At least 6 characters.</span>
+                        </div>
+                        <button type="submit" class="btn btn-go btn-block">Create account</button>
+                    </form>
+                </div>
+                <p class="auth-foot"><button onclick="app.showView('login')" class="link-btn">Back to log in</button></p>
+            </div>
+        </div>
+
+        <!-- VIEW: FORGOT PASSWORD -->
+        <div id="view-forgot-password" class="view view-center hidden">
+            <div class="auth-wrap">
+                <div class="auth-head">
+                    <h2 class="auth-title">Reset your password</h2>
+                    <p class="auth-sub">Enter your email and we'll send you a link to set a new one.</p>
+                </div>
+                <div class="panel">
+                    <form id="forgot-password-form" class="form-stack">
+                        <div class="field">
+                            <label class="label" for="forgot-email">Email address</label>
+                            <input type="email" id="forgot-email" class="input" autocomplete="email" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary btn-block">Send reset link</button>
+                    </form>
+                </div>
+                <p class="auth-foot"><button onclick="app.showView('login')" class="link-btn">Back to log in</button></p>
+            </div>
+        </div>
+
+        <!-- VIEW: RT DASHBOARD -->
+        <div id="view-rt-home" class="view hidden">
+            <div class="page-head">
+                <div>
+                    <h2 class="page-title">Active jobs</h2>
+                    <p class="page-sub">Review bids and award loads.</p>
+                </div>
+                <button onclick="app.showView('rtPostJob')" class="btn btn-primary btn-sm"><i class="ri-add-line"></i> Post job</button>
+            </div>
+            <!-- Container for dynamic RT jobs -->
+            <div id="rt-jobs-container" class="stack"></div>
+        </div>
+
+        <!-- VIEW: RT CUSTOMER REQUESTS (drafts waiting for review) -->
+        <div id="view-rt-requests" class="view hidden">
+            <div>
+                <h2 class="page-title">Customer requests</h2>
+                <p class="page-sub">Check each request, add the PO number and post it.</p>
+            </div>
+            <div id="rt-requests-container" class="stack"></div>
+        </div>
+
+        <!-- VIEW: RT POST JOB -->
+        <div id="view-rt-post-job" class="view hidden">
+            <div class="back-row">
+                <button onclick="app.showView('rtHome')" class="back-btn" aria-label="Back to active jobs"><i class="ri-arrow-left-line"></i></button>
+                <h2 class="page-title">Post a job</h2>
+            </div>
+
+            <form id="post-job-form" class="panel form-stack" style="gap:20px">
+
+                <fieldset class="fieldset">
+                    <legend class="fieldset-title">Route</legend>
+                    <div class="field">
+                        <label class="label" for="job-po-number">PO number (internal)</label>
+                        <input type="text" id="job-po-number" placeholder="e.g. PO-45992" class="input" required>
+                    </div>
+                    <div class="field">
+                        <label class="label" for="job-source">Pickup location</label>
+                        <input type="text" id="job-source" placeholder="e.g. Petaling Jaya, SEL" class="input" required>
+                    </div>
+                    <div class="field">
+                        <label class="label" for="job-source-link">Pickup map link (optional)</label>
+                        <input type="url" id="job-source-link" placeholder="https://maps.app.goo.gl/..." class="input">
+                    </div>
+                    <div class="field">
+                        <label class="label" for="job-dest">Drop-off location</label>
+                        <input type="text" id="job-dest" placeholder="e.g. Johor Bahru, JHR" class="input" required>
+                    </div>
+                    <div class="field">
+                        <label class="label" for="job-dest-link">Drop-off map link (optional)</label>
+                        <input type="url" id="job-dest-link" placeholder="https://maps.app.goo.gl/..." class="input">
+                    </div>
+                </fieldset>
+
+                <fieldset class="fieldset">
+                    <legend class="fieldset-title">Load</legend>
+                    <div class="field-row">
+                        <div class="field" style="flex:2">
+                            <label class="label" for="job-item">Item</label>
+                            <select id="job-item" class="input" required>
+                                <option value="Jumbo Bags">Jumbo Bags</option>
+                                <option value="Drums">Drums</option>
+                                <option value="Pallets">Pallets</option>
+                                <option value="Pails (25kg)">Pails (25kg)</option>
+                                <option value="Others">Others</option>
+                            </select>
+                        </div>
+                        <div class="field" style="flex:1">
+                            <label class="label" for="job-qty">Quantity</label>
+                            <input type="number" id="job-qty" class="input" min="1" step="1" inputmode="numeric" required>
+                        </div>
+                    </div>
+                    <div class="field" id="job-item-other-wrap" style="display:none">
+                        <label class="label" for="job-item-other">Others (please specify)</label>
+                        <input type="text" id="job-item-other" class="input" maxlength="100" placeholder="e.g. IBC Tank, Steel Rolls">
+                    </div>
+                    <label class="check" for="job-unloading">
+                        <input type="checkbox" id="job-unloading">
+                        <span>Unloading service required</span>
+                    </label>
+                </fieldset>
+
+                <fieldset class="fieldset">
+                    <legend class="fieldset-title">Schedule and price</legend>
+                    <div class="field-row">
+                        <div class="field">
+                            <label class="label" for="job-date">Delivery date</label>
+                            <input type="date" id="job-date" class="input" required>
+                        </div>
+                        <div class="field">
+                            <label class="label" for="job-price">Price (RM)</label>
+                            <input type="number" id="job-price" placeholder="850" class="input" min="1" step="any" inputmode="decimal" required>
+                            <a href="https://funny-klepon-69696a.netlify.app/" target="_blank" rel="noopener noreferrer" class="hint" style="color:var(--info);font-weight:600;text-decoration:none">
+                                <i class="ri-links-line"></i> Price guide
+                            </a>
+                        </div>
+                    </div>
+                </fieldset>
+
+                <fieldset class="fieldset">
+                    <legend class="fieldset-title">Photos and notes</legend>
+                    <div class="field-row">
+                        <div class="field">
+                            <label class="label" for="job-photo-1">Photo 1 (optional)</label>
+                            <input type="file" id="job-photo-1" accept="image/*" class="input">
+                        </div>
+                        <div class="field">
+                            <label class="label" for="job-photo-2">Photo 2 (optional)</label>
+                            <input type="file" id="job-photo-2" accept="image/*" class="input">
+                        </div>
+                    </div>
+                    <div class="field">
+                        <label class="label" for="job-remarks">Remarks (optional)</label>
+                        <input type="text" id="job-remarks" placeholder="e.g. Handle with care" class="input">
+                    </div>
+                </fieldset>
+
+                <button type="submit" class="btn btn-primary btn-block">Publish job</button>
+            </form>
+        </div>
+
+        <!-- VIEW: RT REVIEW BIDS -->
+        <div id="view-rt-review-bids" class="view hidden">
+            <div class="back-row">
+                <button onclick="app.showView('rtHome')" class="back-btn" aria-label="Back to active jobs"><i class="ri-arrow-left-line"></i></button>
+                <h2 class="page-title">Bids</h2>
+            </div>
+            <!-- Bids are injected here -->
+            <div id="bids-container" class="stack"></div>
+        </div>
+
+        <!-- VIEW: CUSTOMER HOME -->
+        <div id="view-customer-home" class="view hidden">
+            <div class="page-head">
+                <div>
+                    <h2 class="page-title" id="customer-welcome">Welcome</h2>
+                    <p class="page-sub">Your jobs and delivery status.</p>
+                </div>
+                <button onclick="app.openCustomerNewJob()" class="btn btn-primary btn-sm"><i class="ri-add-line"></i> New job</button>
+            </div>
+            <div id="customer-jobs-container" class="stack"></div>
+        </div>
+
+        <!-- VIEW: CUSTOMER NEW JOB (draft sent to RT for approval) -->
+        <div id="view-customer-new-job" class="view hidden">
+            <div class="back-row">
+                <button onclick="app.showCustomerHome()" class="back-btn" aria-label="Back to my jobs"><i class="ri-arrow-left-line"></i></button>
+                <h2 class="page-title" id="cj-title">New job</h2>
+            </div>
+
+            <form id="customer-job-form" class="panel form-stack" style="gap:20px">
+
+                <fieldset class="fieldset">
+                    <legend class="fieldset-title">Route</legend>
+                    <div class="field">
+                        <label class="label" for="cj-source">Pickup location</label>
+                        <input type="text" id="cj-source" placeholder="e.g. Petaling Jaya, SEL" class="input" required>
+                    </div>
+                    <div class="field">
+                        <label class="label" for="cj-source-link">Pickup map link (optional)</label>
+                        <input type="url" id="cj-source-link" placeholder="https://maps.app.goo.gl/..." class="input">
+                    </div>
+                    <div class="field">
+                        <label class="label" for="cj-dest">Drop-off location</label>
+                        <input type="text" id="cj-dest" placeholder="e.g. Johor Bahru, JHR" class="input" required>
+                    </div>
+                    <div class="field">
+                        <label class="label" for="cj-dest-link">Drop-off map link (optional)</label>
+                        <input type="url" id="cj-dest-link" placeholder="https://maps.app.goo.gl/..." class="input">
+                    </div>
+                </fieldset>
+
+                <fieldset class="fieldset">
+                    <legend class="fieldset-title">Load</legend>
+                    <div class="field-row">
+                        <div class="field" style="flex:2">
+                            <label class="label" for="cj-item">Item</label>
+                            <select id="cj-item" class="input" required>
+                                <option value="Jumbo Bags">Jumbo Bags</option>
+                                <option value="Drums">Drums</option>
+                                <option value="Pallets">Pallets</option>
+                                <option value="Pails (25kg)">Pails (25kg)</option>
+                                <option value="Others">Others</option>
+                            </select>
+                        </div>
+                        <div class="field" style="flex:1">
+                            <label class="label" for="cj-qty">Quantity</label>
+                            <input type="number" id="cj-qty" class="input" min="1" step="1" inputmode="numeric" required>
+                        </div>
+                    </div>
+                    <div class="field" id="cj-item-other-wrap" style="display:none">
+                        <label class="label" for="cj-item-other">Others (please specify)</label>
+                        <input type="text" id="cj-item-other" class="input" maxlength="100" placeholder="e.g. IBC Tank, Steel Rolls">
+                    </div>
+                    <label class="check" for="cj-unloading">
+                        <input type="checkbox" id="cj-unloading">
+                        <span>Unloading service required</span>
+                    </label>
+                </fieldset>
+
+                <fieldset class="fieldset">
+                    <legend class="fieldset-title">Schedule and price</legend>
+                    <div class="field-row">
+                        <div class="field">
+                            <label class="label" for="cj-date">Delivery date</label>
+                            <input type="date" id="cj-date" class="input" required>
+                        </div>
+                        <div class="field">
+                            <label class="label" for="cj-price">Expected price (RM)</label>
+                            <input type="number" id="cj-price" placeholder="850" class="input" min="1" step="any" inputmode="decimal" required>
+                            <span class="hint">What you are willing to pay for this job.</span>
+                        </div>
+                    </div>
+                </fieldset>
+
+                <fieldset class="fieldset">
+                    <legend class="fieldset-title">Photos and notes</legend>
+                    <div class="field-row">
+                        <div class="field">
+                            <label class="label" for="cj-photo-1">Photo 1 (optional)</label>
+                            <input type="file" id="cj-photo-1" accept="image/*" class="input">
+                        </div>
+                        <div class="field">
+                            <label class="label" for="cj-photo-2">Photo 2 (optional)</label>
+                            <input type="file" id="cj-photo-2" accept="image/*" class="input">
+                        </div>
+                    </div>
+                    <span class="hint" id="cj-photo-hint" style="display:none">Leave the photos empty to keep the current ones.</span>
+                    <div class="field">
+                        <label class="label" for="cj-remarks">Remarks (optional)</label>
+                        <input type="text" id="cj-remarks" placeholder="e.g. Handle with care" class="input">
+                    </div>
+                </fieldset>
+
+                <button type="submit" id="cj-submit" class="btn btn-primary btn-block">Send to RT LorryLink</button>
+                <p class="hint" style="text-align:center">We will review your job and contact you on WhatsApp if we have any questions.</p>
+            </form>
+        </div>
+
+        <!-- VIEW: RT REVIEW CUSTOMER DRAFT -->
+        <div id="view-rt-review-draft" class="view hidden">
+            <div class="back-row">
+                <button onclick="app.showRtRequests()" class="back-btn" aria-label="Back to requests"><i class="ri-arrow-left-line"></i></button>
+                <h2 class="page-title">Review job</h2>
+            </div>
+            <div id="draft-review-container" class="stack"></div>
+        </div>
+
+        <!-- VIEW: TRANSPORTER DASHBOARD -->
+        <div id="view-transporter-home" class="view hidden">
+            <div>
+                <h2 class="page-title">Open jobs</h2>
+                <p class="page-sub">Accept at the posted price or send a counter-offer.</p>
+            </div>
+            <!-- Container for dynamic Transporter jobs -->
+            <div id="transporter-jobs-container" class="stack"></div>
+
+            <section class="activity">
+                <h3 class="section-title">Recently awarded</h3>
+                <p class="page-sub" style="margin-bottom:12px">Loads move fast. Check the board daily.</p>
+                <div id="recent-activity-container" class="stack" style="gap:10px"></div>
+            </section>
+        </div>
+
+        <!-- VIEW: TRANSPORTER MY JOBS -->
+        <div id="view-transporter-my-jobs" class="view hidden">
+            <div>
+                <h2 class="page-title">My assigned jobs</h2>
+                <p class="page-sub">Loads awarded to your company.</p>
+            </div>
+            <!-- Container for dynamic assigned jobs -->
+            <div id="my-jobs-container" class="stack"></div>
+        </div>
+
+        <!-- VIEW: COUNTER OFFER -->
+        <div id="view-counter-offer" class="view hidden">
+            <div class="back-row">
+                <button onclick="app.showView('transporterHome')" class="back-btn" aria-label="Back to open jobs"><i class="ri-arrow-left-line"></i></button>
+                <h2 class="page-title">Counter-offer</h2>
+            </div>
+
+            <form id="counter-offer-form" class="panel form-stack">
+                <input type="hidden" id="counter-job-id">
+
+                <div class="field">
+                    <label class="label" for="counter-price">Your price (RM)</label>
+                    <input type="number" id="counter-price" class="input" min="1" step="any" inputmode="decimal" required>
+                </div>
+
+                <div class="field">
+                    <label class="label" for="counter-date">Delivery date</label>
+                    <input type="date" id="counter-date" class="input" required>
+                    <span class="hint">Must be within 3 days of the original date.</span>
+                </div>
+
+                <button type="submit" class="btn btn-primary btn-block">Submit counter-offer</button>
+            </form>
+        </div>
+    </main>
+
+    <!-- BOTTOM NAVIGATION -->
+    <nav id="bottom-nav" class="bottom-nav pb-safe hidden" aria-label="Main">
+        <ul id="nav-rt" class="tabbar hidden flex">
+            <li>
+                <button class="tab is-active" data-tab="rt" onclick="app.showRtJobs()">
+                    <i class="ri-list-check"></i><span>Jobs</span>
+                </button>
+            </li>
+            <li>
+                <button class="tab" data-tab="requests" onclick="app.showRtRequests()">
+                    <span class="tab-icon"><i class="ri-inbox-line"></i><span id="requests-badge" class="tab-badge hidden">0</span></span><span>Requests</span>
+                </button>
+            </li>
+        </ul>
+        <ul id="nav-transporter" class="tabbar hidden flex">
+            <li>
+                <button class="tab is-active" data-tab="board" onclick="app.showTransporterBoard()">
+                    <i class="ri-search-eye-line"></i><span>Job board</span>
+                </button>
+            </li>
+            <li>
+                <button class="tab" data-tab="myjobs" onclick="app.showMyJobs()">
+                    <i class="ri-truck-line"></i><span>My jobs</span>
+                </button>
+            </li>
+        </ul>
+    </nav>
+
+    <div id="toast-region" class="toast-region" role="status" aria-live="polite"></div>
+
+    <script src="app.js"></script>
+</body>
+</html>
