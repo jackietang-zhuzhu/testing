@@ -167,6 +167,9 @@
                         <label class="label" for="job-dest-link">Drop-off map link (optional)</label>
                         <input type="url" id="job-dest-link" placeholder="https://maps.app.goo.gl/..." class="input">
                     </div>
+                    <!-- Extra drop-offs: empty (and invisible) unless the user adds one -->
+                    <div id="job-extra-stops" class="stack" style="gap:12px"></div>
+                    <button type="button" id="job-add-stop" class="btn btn-secondary btn-sm" style="align-self:flex-start" onclick="app.addStop('job')"><i class="ri-add-line"></i> Add another drop-off</button>
                 </fieldset>
 
                 <fieldset class="fieldset">
@@ -277,6 +280,13 @@
                         <label class="label" for="cj-source-link">Pickup map link (optional)</label>
                         <input type="url" id="cj-source-link" placeholder="https://maps.app.goo.gl/..." class="input">
                     </div>
+                    <div style="display:flex;flex-direction:column;gap:8px">
+                        <button type="button" id="cj-use-factory" class="btn btn-secondary btn-sm" style="display:none;align-self:flex-start" onclick="app.useFactory()"><i class="ri-building-2-line"></i> Use my factory address</button>
+                        <label class="check" for="cj-save-factory" style="font-weight:400;font-size:.8125rem">
+                            <input type="checkbox" id="cj-save-factory">
+                            <span>Save this pickup as my factory address</span>
+                        </label>
+                    </div>
                     <div class="field">
                         <label class="label" for="cj-dest">Drop-off location</label>
                         <input type="text" id="cj-dest" placeholder="e.g. Johor Bahru, JHR" class="input" required>
@@ -285,6 +295,9 @@
                         <label class="label" for="cj-dest-link">Drop-off map link (optional)</label>
                         <input type="url" id="cj-dest-link" placeholder="https://maps.app.goo.gl/..." class="input">
                     </div>
+                    <!-- Extra drop-offs: empty (and invisible) unless the user adds one -->
+                    <div id="cj-extra-stops" class="stack" style="gap:12px"></div>
+                    <button type="button" id="cj-add-stop" class="btn btn-secondary btn-sm" style="align-self:flex-start" onclick="app.addStop('cj')"><i class="ri-add-line"></i> Add another drop-off</button>
                 </fieldset>
 
                 <fieldset class="fieldset">
