@@ -819,7 +819,7 @@ const app = {
                 ${ui.facts(job, { po: true, date: job.delivery_date, dateLabel: 'Original date', delivered: !!job.do_url })}
                 ${ui.photos(job, true)}
                 ${ui.remarks(job.remarks)}
-                ${ui.doSlip(job, { showTime: true, download: true })}
+                ${ui.doSlip(job, { showTime: true })}
                 <div class="job-foot">
                     ${ui.price('Original budget', originalPrice)}
                 </div>
@@ -1250,7 +1250,7 @@ const app = {
                     ${ui.facts(job, { date: job.delivery_date })}
                     ${ui.photos(job, true)}
                     ${ui.remarks(job.remarks)}
-                    ${ui.doSlip(job, { showTime: true, timeLabel: 'Delivered', download: true })}
+                    ${ui.doSlip(job, { showTime: true, timeLabel: 'Delivered' })}
                     ${foot}
                 </article>
             `;
