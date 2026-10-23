@@ -386,6 +386,7 @@ input[type="file"]::file-selector-button {
     border-radius: 8px;
 }
 .notice-warn { background: var(--road-soft); color: var(--road-ink); border: 1px solid #ecd48c; }
+.notice-info { background: var(--info-soft); color: var(--info-ink); border: 1px solid #c3dbec; }
 
 /* ---------- Bids ---------- */
 .summary { gap: 12px; }
