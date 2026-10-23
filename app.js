@@ -185,9 +185,10 @@ const ui = {
         const dl = download
             ? `<a class="btn btn-secondary btn-sm" href="${this.esc(this.downloadUrl(job.do_url))}" download><i class="ri-download-2-line"></i> Download</a>`
             : '';
-        return `<div class="do-block">
-            <p class="remarks" style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:4px 12px"><b>Delivery Order (DO)</b>${when}</p>
-            <div class="photo-strip is-small" style="align-items:center;gap:12px">${thumb}${dl}</div>
+        // One grey box (same look as Remarks): title + time on top, thumbnail + download below
+        return `<div class="remarks do-block">
+            <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:4px 12px"><b>Delivery Order (DO)</b>${when}</div>
+            <div class="photo-strip is-small" style="align-items:center;gap:12px;margin-top:8px">${thumb}${dl}</div>
         </div>`;
     },
     remarks(text) {
