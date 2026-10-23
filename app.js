@@ -72,7 +72,7 @@ const ui = {
         let tone = 'info';
         if (/already/i.test(m)) tone = 'info';
         else if (/error|failed|invalid|cannot|could not|too large|suspended|blocked/i.test(m)) tone = 'error';
-        else if (/success|sent|posted|published|awarded|accepted|submitted|removed|undone|uploaded|uploading|cancelled|updated/i.test(m)) tone = 'success';
+        else if (/success|sent|posted|placed|published|awarded|accepted|submitted|removed|undone|uploaded|uploading|cancelled|updated/i.test(m)) tone = 'success';
         this.toast(m, tone);
     },
 
@@ -102,7 +102,7 @@ const ui = {
             hour: '2-digit', minute: '2-digit', hour12: true
         }));
     },
-    posted(iso) { return iso ? `Posted ${this.fmtDateTime(iso)}` : ''; },
+    posted(iso, label = 'Posted') { return iso ? `${label} ${this.fmtDateTime(iso)}` : ''; },
     money(n) {
         const v = Number(n);
         if (!Number.isFinite(v)) return '0.00';
@@ -294,7 +294,7 @@ const app = {
         document.getElementById('reg-role').value = isCustomer ? 'customer' : 'transporter';
         document.getElementById('reg-title').textContent = isCustomer ? 'Register as customer' : 'Register as transporter';
         document.getElementById('reg-sub').textContent = isCustomer
-            ? "Create a customer account to send us your jobs. We'll email you a link to confirm your address."
+            ? "Create a customer account to place delivery orders. We'll email you a link to confirm your address."
             : "Create a transporter account to bid on loads. We'll email you a link to confirm your address.";
         this.showView('register');
     },
@@ -606,7 +606,7 @@ const app = {
         const { error } = await supabaseClient.rpc('save_my_factory', { p_loc: loc, p_link: link || '' });
         if (error) {
             console.error(error);
-            ui.notify("Your job was sent, but your factory address could not be saved: " + error.message);
+            ui.notify("Your order was placed, but your factory address could not be saved: " + error.message);
             return;
         }
         this.factory = { loc, link: link || '' };
@@ -1278,13 +1278,13 @@ const app = {
         document.getElementById('cj-date').min = new Date().toISOString().split('T')[0];
 
         document.getElementById('cj-title').textContent =
-            mode === 'edit' ? 'Edit request' : (mode === 'copy' ? 'Book again' : 'New job');
+            mode === 'edit' ? 'Edit order' : (mode === 'copy' ? 'Book again' : 'New order');
         document.getElementById('cj-submit').textContent =
-            mode === 'edit' ? 'Save changes' : 'Send to RT LorryLink';
+            mode === 'edit' ? 'Save changes' : 'Place order';
         document.getElementById('cj-photo-hint').style.display = mode === 'edit' ? '' : 'none';
 
         if (job) this.fillCustomerForm(job, mode === 'edit');
-        if (mode === 'copy') ui.notify("Copied from your previous job. Please set the date and price.");
+        if (mode === 'copy') ui.notify("Copied from your previous order. Please set the date and price.");
         this.showView('customerNewJob');
 
         // Saved factory address: show the shortcut button, and for a brand-new job fill in the pickup.
@@ -1328,14 +1328,14 @@ const app = {
     },
 
     async cancelCustomerJob(jobId) {
-        if (!confirm("Cancel this request? This cannot be undone.")) return;
+        if (!confirm("Cancel this order? This cannot be undone.")) return;
         const { error } = await supabaseClient.rpc('cancel_customer_job', { p_job_id: jobId });
         if (error) {
             console.error(error);
-            ui.notify("Failed to cancel: " + error.message);
+            ui.notify("Failed to cancel order: " + error.message);
             return;
         }
-        ui.notify("Request cancelled.");
+        ui.notify("Order cancelled.");
         this.fetchCustomerJobs();
     },
 
@@ -1394,7 +1394,7 @@ const app = {
             submitBtn.innerText = originalText;
             submitBtn.disabled = false;
             console.error(error);
-            ui.notify("Failed to send job: " + error.message);
+            ui.notify("Failed to place order: " + error.message);
             return;
         }
 
@@ -1408,7 +1408,7 @@ const app = {
             if (stopsError) {
                 stopsFailed = true;
                 console.error(stopsError);
-                ui.notify("Your job was sent, but the extra drop-offs could not be saved: " + stopsError.message + ". Please tap Edit on the request and add them again.");
+                ui.notify("Your order was placed, but the extra drop-offs could not be saved: " + stopsError.message + ". Please tap Edit on the order and add them again.");
             }
         }
 
@@ -1419,7 +1419,7 @@ const app = {
             await this.saveFactory(payload.p_source_loc, payload.p_source_maps_link);
         }
         if (!stopsFailed) {
-            ui.notify(editing ? "Changes saved and sent. We will review it shortly." : "Job sent. We will review it shortly.");
+            ui.notify(editing ? "Changes saved. We will review your order shortly." : "Order placed. We will review it shortly.");
         }
         this.editingJobId = null;
         this.editingHadStops = false;
@@ -1462,7 +1462,7 @@ const app = {
         if (silent && sig === this.lastSig.customer) return;
         this.lastSig.customer = sig;
         if (silent && prevStages && visible.some(j => prevStages[j.id] !== undefined && prevStages[j.id] !== this.knownStages[j.id])) {
-            ui.notify('A job status was updated');
+            ui.notify('An order status was updated');
         }
         this.customerJobs = visible;
         this.renderCustomerJobs();
@@ -1477,10 +1477,10 @@ const app = {
 
     customerSteps(stage, job) {
         const order = ['review', 'approved', 'delivering', 'delivered'];
-        const labels = ['Submitted', 'Approved', 'Delivering', 'Delivered'];
+        const labels = ['Ordered', 'Approved', 'Delivering', 'Delivered'];
         const times = [job.created_at, job.approved_at, job.assigned_at, job.do_uploaded_at];
         const reached = order.indexOf(stage);
-        return `<ol class="steps" aria-label="Job progress">${labels.map((label, i) => {
+        return `<ol class="steps" aria-label="Order progress">${labels.map((label, i) => {
             const t = i <= reached ? ui.fmtShort(times[i]) : '';
             return `<li class="step${i <= reached ? ' is-done' : ''}${i === reached ? ' is-current' : ''}"><span class="step-dot">${i <= reached ? '<i class="ri-check-line"></i>' : ''}</span><span class="step-label">${label}</span>${t ? `<span class="step-time">${t}</span>` : ''}</li>`;
         }).join('')}</ol>`;
@@ -1500,7 +1500,7 @@ const app = {
             : '';
 
         if (all.length === 0) {
-            container.innerHTML = ui.empty('ri-file-list-3-line', 'No jobs yet', 'Tap New job to send us your first job.') + help;
+            container.innerHTML = ui.empty('ri-file-list-3-line', 'No orders yet', 'Tap New order to place your first delivery order.') + help;
             return;
         }
 
@@ -1516,7 +1516,7 @@ const app = {
 
         const shown = active === 'all' ? all : all.filter(j => this.customerStage(j) === active);
         if (shown.length === 0) {
-            container.innerHTML = chips + ui.empty('ri-file-list-3-line', 'Nothing here', 'No jobs in this status.') + help;
+            container.innerHTML = chips + ui.empty('ri-file-list-3-line', 'Nothing here', 'No orders in this status.') + help;
             return;
         }
 
@@ -1533,13 +1533,13 @@ const app = {
             const actions = [];
             if (stage === 'review') {
                 actions.push(`<button class="btn btn-secondary btn-sm" data-id="${id}" onclick="app.openCustomerEdit(this.dataset.id)"><i class="ri-edit-line"></i> Edit</button>`);
-                actions.push(`<button class="btn btn-danger-ghost btn-sm" data-id="${id}" onclick="app.cancelCustomerJob(this.dataset.id)">Cancel request</button>`);
+                actions.push(`<button class="btn btn-danger-ghost btn-sm" data-id="${id}" onclick="app.cancelCustomerJob(this.dataset.id)">Cancel order</button>`);
             }
             if (stage === 'delivered') {
                 actions.push(`<button class="btn btn-secondary btn-sm" data-id="${id}" onclick="app.openCustomerCopy(this.dataset.id)"><i class="ri-repeat-line"></i> Book again</button>`);
             }
             if (waBase) {
-                const msg = `Hi, I'd like to ask about my job: ${job.source_loc} to ${job.dest_loc}, delivery ${job.delivery_date}.`;
+                const msg = `Hi, I'd like to ask about my order: ${job.source_loc} to ${job.dest_loc}, delivery ${job.delivery_date}.`;
                 actions.push(`<a class="btn btn-secondary btn-sm" href="${ui.esc(waBase + '?text=' + encodeURIComponent(msg))}" target="_blank" rel="noopener noreferrer"><i class="ri-whatsapp-line"></i> WhatsApp us</a>`);
             }
             const price = job.customer_expected_price != null ? ui.price('Your expected price', job.customer_expected_price) : '<span></span>';
@@ -1551,7 +1551,7 @@ const app = {
                 <article class="job-card">
                     <div class="job-head">
                         ${pill}
-                        <span class="job-time">${ui.posted(job.created_at)}</span>
+                        <span class="job-time">${ui.posted(job.created_at, 'Ordered')}</span>
                     </div>
                     ${this.customerSteps(stage, job)}
                     ${ui.route(job)}
