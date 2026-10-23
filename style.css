@@ -323,6 +323,9 @@ input[type="file"]::file-selector-button {
     white-space: nowrap;
 }
 
+/* No extra drop-offs added yet: take no space (otherwise the form shows a double gap above the button) */
+[id$="-extra-stops"]:empty { display: none; }
+
 /* Extra drop-off rows in the job forms */
 .stop-row {
     display: flex; flex-direction: column; gap: 10px;
