@@ -316,6 +316,7 @@ const app = {
         this.currentUser = null;
         this.currentUserRole = null;
         this.transporterProfile = null; // <-- Added
+        this.myBidsByJob = {};
         this.lastSig = {};
         this.knownRequestIds = null;
         this.knownJobIds = null;
@@ -420,6 +421,19 @@ const app = {
         this.fetchMyJobs();
     },
 	
+	// Re-reads the ban status so a ban (or unban) done in Supabase takes effect without a re-login.
+	// If the request fails we keep the last known status instead of guessing.
+	async refreshTransporterProfile() {
+        if (this.currentUserRole !== 'transporter' || !this.currentUser) return;
+        const { data: profile, error } = await supabaseClient
+            .from('transporters')
+            .select('status, banned_until')
+            .eq('id', this.currentUser.id)
+            .single();
+        if (error) { console.error('Could not refresh transporter profile:', error); return; }
+        if (profile) this.transporterProfile = profile;
+    },
+
 	isBanned() {
         if (!this.transporterProfile || !this.transporterProfile.banned_until) return false;
         const banEnd = new Date(this.transporterProfile.banned_until).getTime();
@@ -500,9 +514,12 @@ const app = {
         this.refreshTimer = setInterval(() => this.autoRefresh(), 20000);
     },
 
-    autoRefresh() {
+    async autoRefresh() {
         if (!this.currentUser || document.hidden) return;
         if (this.uploading && Date.now() - this.uploading < 120000) return; // don't redraw during a DO upload
+        // Pick up bans/unbans done in Supabase before the lists are redrawn
+        await this.refreshTransporterProfile();
+        if (!this.currentUser) return; // logged out while waiting
         switch (this.currentView) {
             case 'rtHome':
             case 'rtRequests':
@@ -598,9 +615,23 @@ const app = {
         const { data: jobs, error } = await supabaseClient.from('jobs').select('*').eq('status', 'open').order('created_at', { ascending: false });
         if (error) { console.error(error); if (!silent) transporterJobsContainer.innerHTML = ui.errorBlock('Check your connection and try again.'); return; }
         if (silent && !this.viewIs('transporterHome')) return;
+
+        // This transporter's own bids, so each card can show what they already offered.
+        // A failure here must not break the board, so we just fall back to "no bids".
+        const { data: myBids, error: bidsError } = await supabaseClient
+            .from('bids')
+            .select('job_id, proposed_price, proposed_date, created_at')
+            .eq('transporter_id', this.currentUser.id);
+        if (bidsError) console.error('Could not load own bids:', bidsError);
+        this.myBidsByJob = {};
+        (myBids || []).forEach(b => {
+            const key = String(b.job_id);
+            (this.myBidsByJob[key] = this.myBidsByJob[key] || []).push(b);
+        });
+
         const prevIds = this.knownJobIds;
         this.knownJobIds = new Set((jobs || []).map(j => j.id));
-        const sig = JSON.stringify([jobs, this.isBanned()]);
+        const sig = JSON.stringify([jobs, this.isBanned(), myBids]);
         if (silent && sig === this.lastSig.board) return;
         this.lastSig.board = sig;
         if (silent && prevIds && (jobs || []).some(j => !prevIds.has(j.id))) ui.notify('New job on the board');
@@ -698,6 +729,7 @@ const app = {
     },
 	
 	async quickAccept(jobId, offeredPrice) {
+		await this.refreshTransporterProfile();
 		if (this.isBanned()) {
             ui.notify("Your account is currently suspended. You cannot accept or bid on jobs.");
             return;
@@ -747,6 +779,7 @@ const app = {
     },
 	
 	async prepareCounterOffer(jobId, originalDate, originalPrice) {
+		await this.refreshTransporterProfile();
 		if (this.isBanned()) {
             ui.notify("Your account is currently suspended. You cannot accept or bid on jobs.");
             return;
@@ -795,6 +828,12 @@ const app = {
 	
     async submitCounterOffer(e) {
         e.preventDefault();
+        await this.refreshTransporterProfile();
+        if (this.isBanned()) {
+            ui.notify("Your account is currently suspended. You cannot accept or bid on jobs.");
+            this.showTransporterBoard();
+            return;
+        }
         const newPrice = parseFloat(document.getElementById('counter-price').value);
         const newDate = document.getElementById('counter-date').value;
 
@@ -1608,6 +1647,9 @@ const app = {
                 </div>
             `;
             this.startBanCountdown();
+        } else if (this.banTimer) {
+            clearInterval(this.banTimer); // unbanned or ban expired: stop the old countdown
+            this.banTimer = null;
         }
 
         if (jobs.length === 0) {
@@ -1619,6 +1661,19 @@ const app = {
             const id = ui.esc(job.id);
             const price = Number(job.offered_price);
 
+            // What this transporter has already offered on this job (lowest bid wins the label)
+            const mine = (this.myBidsByJob || {})[String(job.id)] || [];
+            let bidNotice = '';
+            if (mine.length) {
+                const best = mine.reduce((a, b) => Number(b.proposed_price) < Number(a.proposed_price) ? b : a);
+                const bestPrice = Number(best.proposed_price);
+                const kind = (bestPrice === price && !best.proposed_date) ? 'You accepted at the posted price' : 'Your bid';
+                const dateBit = (best.proposed_date && best.proposed_date !== job.delivery_date)
+                    ? `, delivery ${ui.fmtDate(best.proposed_date)}` : '';
+                const countBit = mine.length > 1 ? ` (${mine.length} bids, lowest shown)` : '';
+                bidNotice = `<div class="notice notice-info"><i class="ri-price-tag-3-line"></i><span>${ui.esc(kind)}: <b>RM ${ui.money(bestPrice)}</b>${dateBit}${countBit}. Waiting for approval.</span></div>`;
+            }
+
             const actions = banned
                 ? `<button class="btn btn-secondary" disabled><i class="ri-lock-line"></i> Suspended</button>`
                 : `<button class="btn btn-go" data-id="${id}" data-price="${price}"
@@ -1629,13 +1684,14 @@ const app = {
             return `
                 <article class="job-card${banned ? ' is-dim' : ''}">
                     <div class="job-head">
-                        ${ui.pill('Open', 'go')}
+                        <span style="display:inline-flex;gap:6px;flex-wrap:wrap">${ui.pill('Open', 'go')}${mine.length ? ui.pill('Bid sent', 'info', 'ri-check-line') : ''}</span>
                         <span class="job-time">${ui.posted(job.created_at)}</span>
                     </div>
                     ${ui.route(job)}
                     ${ui.facts(job, { date: job.delivery_date })}
                     ${ui.photos(job)}
                     ${ui.remarks(job.remarks)}
+                    ${bidNotice}
                     <div class="job-foot">
                         ${ui.price('Offered price', price)}
                         <div class="actions-wide">${actions}</div>
