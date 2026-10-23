@@ -1383,33 +1383,58 @@ const app = {
             p_photo_1_url: photo1Url,
             p_photo_2_url: photo2Url
         };
-        // Only sent when used (or when an edited job had some that must now be cleared)
         const extraStops = this.collectStops('cj');
-        if (extraStops.length || this.editingHadStops) payload.p_extra_stops = extraStops;
         const editing = !!this.editingJobId;
-        const { error } = editing
-            ? await supabaseClient.rpc('update_customer_job', { p_job_id: this.editingJobId, ...payload })
+        const editedJobId = this.editingJobId;
+        const { data: rpcData, error } = editing
+            ? await supabaseClient.rpc('update_customer_job', { p_job_id: editedJobId, ...payload })
             : await supabaseClient.rpc('submit_customer_job', payload);
 
-        submitBtn.innerText = originalText;
-        submitBtn.disabled = false;
-
         if (error) {
+            submitBtn.innerText = originalText;
+            submitBtn.disabled = false;
             console.error(error);
             ui.notify("Failed to send job: " + error.message);
             return;
         }
 
+        // Extra drop-offs are saved in a second step, so the existing submit/update functions stay untouched.
+        // Skipped entirely for ordinary single drop-off jobs. (For an edited job that used to have extra
+        // drop-offs, an empty list is sent so they get cleared.)
+        let stopsFailed = false;
+        if (extraStops.length || this.editingHadStops) {
+            const jobId = editing ? editedJobId : this.extractJobId(rpcData); // null = "my newest request"
+            const { error: stopsError } = await supabaseClient.rpc('set_my_job_stops', { p_stops: extraStops, p_job_id: jobId });
+            if (stopsError) {
+                stopsFailed = true;
+                console.error(stopsError);
+                ui.notify("Your job was sent, but the extra drop-offs could not be saved: " + stopsError.message + ". Please tap Edit on the request and add them again.");
+            }
+        }
+
+        submitBtn.innerText = originalText;
+        submitBtn.disabled = false;
+
         if (document.getElementById('cj-save-factory').checked) {
             await this.saveFactory(payload.p_source_loc, payload.p_source_maps_link);
         }
-        ui.notify(editing ? "Changes saved and sent. We will review it shortly." : "Job sent. We will review it shortly.");
+        if (!stopsFailed) {
+            ui.notify(editing ? "Changes saved and sent. We will review it shortly." : "Job sent. We will review it shortly.");
+        }
         this.editingJobId = null;
         this.editingHadStops = false;
         this.resetStops('cj');
         document.getElementById('customer-job-form').reset();
         this.toggleCustomerOtherItem();
         this.showCustomerHome();
+    },
+
+    // submit_customer_job may return the new job's id (as text, or inside a row), or nothing at all
+    extractJobId(data) {
+        if (typeof data === 'string') return data;
+        if (Array.isArray(data)) data = data[0];
+        if (data && typeof data === 'object') return data.id || data.job_id || null;
+        return null;
     },
 
     async fetchCustomerJobs(silent = false) {
