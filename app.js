@@ -219,6 +219,14 @@ const app = {
     currentUserRole: null,
 	transporterProfile: null,
     banTimer: null,
+    currentView: null,
+    refreshTimer: null,
+    lastSig: {},
+    knownRequestIds: null,
+    knownJobIds: null,
+    knownStages: null,
+    currentBidsJobId: null,
+    uploading: 0,
 
     async init() {
         document.getElementById('login-form').addEventListener('submit', (e) => this.handleLogin(e));
@@ -235,9 +243,12 @@ const app = {
         const { data: { session } } = await supabaseClient.auth.getSession();
         if (session) {
             this.routeUser(session.user);
-        } else {
+                } else {
             this.showView('login');
         }
+
+        document.addEventListener('visibilitychange', () => { if (!document.hidden) this.autoRefresh(); });
+        this.startAutoRefresh();
     },
 
     // --- AUTHENTICATION FUNCTIONS ---
@@ -305,6 +316,11 @@ const app = {
         this.currentUser = null;
         this.currentUserRole = null;
         this.transporterProfile = null; // <-- Added
+        this.lastSig = {};
+        this.knownRequestIds = null;
+        this.knownJobIds = null;
+        this.knownStages = null;
+        this.currentBidsJobId = null;
         
         // Hide UI elements
         btnLogout.classList.add('hidden');
@@ -462,17 +478,51 @@ const app = {
 	},
 	
 	showView(viewName) {
+        this.currentView = viewName;
         Object.values(views).forEach(view => {
             if(view) view.classList.add('hidden');
         });
         if(views[viewName]) {
             views[viewName].classList.remove('hidden');
-            views[viewName].classList.add('flex');
+                        views[viewName].classList.add('flex');
         }
     },
 
-    async fetchJobsForRT() {
-        rtJobsContainer.innerHTML = ui.skeleton(3);
+    // ==========================================
+    // --- AUTO REFRESH ---
+    // Every 20s the open list is re-fetched quietly (no skeleton, no flicker).
+    // The screen is only redrawn when the data really changed.
+    // ==========================================
+    viewIs(...names) { return names.includes(this.currentView); },
+
+    startAutoRefresh() {
+        if (this.refreshTimer) clearInterval(this.refreshTimer);
+        this.refreshTimer = setInterval(() => this.autoRefresh(), 20000);
+    },
+
+    autoRefresh() {
+        if (!this.currentUser || document.hidden) return;
+        if (this.uploading && Date.now() - this.uploading < 120000) return; // don't redraw during a DO upload
+        switch (this.currentView) {
+            case 'rtHome':
+            case 'rtRequests':
+                this.fetchJobsForRT(true); break;
+            case 'rtReviewBids':
+                if (this.currentBidsJobId) this.viewBids(this.currentBidsJobId, true);
+                break;
+            case 'transporterHome':
+                this.fetchJobsForTransporter(true);
+                this.fetchRecentMarketActivity(true);
+                break;
+            case 'transporterMyJobs':
+                this.fetchMyJobs(true); break;
+            case 'customerHome':
+                this.fetchCustomerJobs(true); break;
+        }
+    },
+
+    async fetchJobsForRT(silent = false) {
+        if (!silent) rtJobsContainer.innerHTML = ui.skeleton(3);
         
  const { data: jobs, error } = await supabaseClient
             .from('jobs')
@@ -480,9 +530,16 @@ const app = {
             .neq('status', 'archived') 
             .order('created_at', { ascending: false });
             
-        if (error) { console.error(error); rtJobsContainer.innerHTML = ui.errorBlock('Check your connection and try again.'); return; }
+        if (error) { console.error(error); if (!silent) rtJobsContainer.innerHTML = ui.errorBlock('Check your connection and try again.'); return; }
+        if (silent && !this.viewIs('rtHome', 'rtRequests')) return;
         const all = jobs || [];
         const requests = all.filter(j => j.status === 'pending_review');
+        const prevIds = this.knownRequestIds;
+        this.knownRequestIds = new Set(requests.map(j => j.id));
+        const sig = JSON.stringify(jobs);
+        if (silent && sig === this.lastSig.rt) return;
+        this.lastSig.rt = sig;
+        if (silent && prevIds && requests.some(j => !prevIds.has(j.id))) ui.notify('New customer request');
         this.updateRequestsBadge(requests.length);
         this.renderRTJobs(all.filter(j => j.status !== 'pending_review'));
         this.renderRTRequests(requests);
@@ -536,10 +593,17 @@ const app = {
         }).join('');
     },
 
-    async fetchJobsForTransporter() {
-        transporterJobsContainer.innerHTML = ui.skeleton(3);
+    async fetchJobsForTransporter(silent = false) {
+        if (!silent) transporterJobsContainer.innerHTML = ui.skeleton(3);
         const { data: jobs, error } = await supabaseClient.from('jobs').select('*').eq('status', 'open').order('created_at', { ascending: false });
-        if (error) { console.error(error); transporterJobsContainer.innerHTML = ui.errorBlock('Check your connection and try again.'); return; }
+        if (error) { console.error(error); if (!silent) transporterJobsContainer.innerHTML = ui.errorBlock('Check your connection and try again.'); return; }
+        if (silent && !this.viewIs('transporterHome')) return;
+        const prevIds = this.knownJobIds;
+        this.knownJobIds = new Set((jobs || []).map(j => j.id));
+        const sig = JSON.stringify([jobs, this.isBanned()]);
+        if (silent && sig === this.lastSig.board) return;
+        this.lastSig.board = sig;
+        if (silent && prevIds && (jobs || []).some(j => !prevIds.has(j.id))) ui.notify('New job on the board');
         this.renderTransporterJobs(jobs);
     },
 
@@ -779,10 +843,13 @@ const app = {
         }
     },
 	
-    async viewBids(jobId) {
-        this.showView('rtReviewBids');
+    async viewBids(jobId, silent = false) {
         const container = document.getElementById('bids-container');
-        container.innerHTML = ui.skeleton(2);
+        if (!silent) {
+            this.currentBidsJobId = jobId;
+            this.showView('rtReviewBids');
+            container.innerHTML = ui.skeleton(2);
+        }
 
         const { data: job, error: jobError } = await supabaseClient
             .from('jobs')
@@ -791,7 +858,7 @@ const app = {
             .single();
 
         if (jobError) {
-            container.innerHTML = ui.errorBlock(jobError.message);
+            if (!silent) container.innerHTML = ui.errorBlock(jobError.message);
             return;
         }
 
@@ -802,9 +869,13 @@ const app = {
             .order('created_at', { ascending: false });
 
         if (error) {
-            container.innerHTML = ui.errorBlock(error.message);
+            if (!silent) container.innerHTML = ui.errorBlock(error.message);
             return;
         }
+        if (silent && !this.viewIs('rtReviewBids')) return;
+        const sig = JSON.stringify([job, bids]);
+        if (silent && sig === this.lastSig.bids) return;
+        this.lastSig.bids = sig;
 
         const originalPrice = Number(job.offered_price);
         const bidCount = bids.length;
@@ -1140,9 +1211,9 @@ const app = {
         this.showCustomerHome();
     },
 
-    async fetchCustomerJobs() {
+    async fetchCustomerJobs(silent = false) {
         const container = document.getElementById('customer-jobs-container');
-        container.innerHTML = ui.skeleton(2);
+        if (!silent) container.innerHTML = ui.skeleton(2);
 
         // customer_jobs is a database view that only returns this customer's own jobs, with no prices or bids
         const { data: jobs, error } = await supabaseClient
@@ -1152,11 +1223,22 @@ const app = {
 
         if (error) {
             console.error(error);
-            container.innerHTML = ui.errorBlock(error.message);
+            if (!silent) container.innerHTML = ui.errorBlock(error.message);
             return;
         }
+        if (silent && !this.viewIs('customerHome')) return;
         // jobs the admin removed (archived) are not shown to customers
-        this.customerJobs = (jobs || []).filter(j => j.status !== 'archived');
+        const visible = (jobs || []).filter(j => j.status !== 'archived');
+        const prevStages = this.knownStages;
+        this.knownStages = {};
+        visible.forEach(j => { this.knownStages[j.id] = this.customerStage(j); });
+        const sig = JSON.stringify(visible);
+        if (silent && sig === this.lastSig.customer) return;
+        this.lastSig.customer = sig;
+        if (silent && prevStages && visible.some(j => prevStages[j.id] !== undefined && prevStages[j.id] !== this.knownStages[j.id])) {
+            ui.notify('A job status was updated');
+        }
+        this.customerJobs = visible;
         this.renderCustomerJobs();
     },
 
@@ -1377,6 +1459,7 @@ const app = {
             return;
         }
 
+        this.uploading = Date.now();
         ui.notify("Uploading DO...");
         const fileExt = (isPdf ? 'pdf' : file.name.split('.').pop()).toLowerCase();
         const filePath = `public/do-${jobId}-${Date.now()}.${fileExt}`;
@@ -1387,6 +1470,7 @@ const app = {
 
         if (uploadError) {
             console.error('DO upload error:', uploadError);
+            this.uploading = 0;
             ui.notify('Failed to upload DO: ' + uploadError.message);
             input.value = '';
             return;
@@ -1403,18 +1487,20 @@ const app = {
 
         if (saveError) {
             console.error('DO save error:', saveError);
+            this.uploading = 0;
             ui.notify("DO uploaded but could not be saved to the job: " + saveError.message);
             input.value = '';
             return;
         }
 
+        this.uploading = 0;
         ui.notify("DO uploaded.");
         this.fetchMyJobs();
     },
 
-	async fetchMyJobs() {
+	async fetchMyJobs(silent = false) {
         const container = document.getElementById('my-jobs-container');
-        container.innerHTML = ui.skeleton(2);
+        if (!silent) container.innerHTML = ui.skeleton(2);
 
         const { data: bids, error } = await supabaseClient
             .from('bids')
@@ -1425,10 +1511,14 @@ const app = {
 
         if (error) {
             console.error(error);
-            container.innerHTML = ui.errorBlock(error.message);
+            if (!silent) container.innerHTML = ui.errorBlock(error.message);
             return;
         }
 
+        if (silent && !this.viewIs('transporterMyJobs')) return;
+        const sig = JSON.stringify(bids);
+        if (silent && sig === this.lastSig.myjobs) return;
+        this.lastSig.myjobs = sig;
         this.renderMyJobs(bids);
     },
 
@@ -1557,11 +1647,11 @@ const app = {
         transporterJobsContainer.innerHTML = bannerHtml + jobsHtml;
     },
 
-	async fetchRecentMarketActivity() {
+	async fetchRecentMarketActivity(silent = false) {
         const container = document.getElementById('recent-activity-container');
         if (!container) return;
         
-        container.innerHTML = ui.skeleton(2, 64);
+        if (!silent) container.innerHTML = ui.skeleton(2, 64);
         
         const { data: jobs, error } = await supabaseClient
             .from('jobs')
@@ -1572,10 +1662,14 @@ const app = {
             
         if (error) {
             console.error("Error fetching market activity:", error);
-            container.innerHTML = '';
+            if (!silent) container.innerHTML = '';
             return;
         }
         
+        if (silent && !this.viewIs('transporterHome')) return;
+        const sig = JSON.stringify(jobs);
+        if (silent && sig === this.lastSig.recent) return;
+        this.lastSig.recent = sig;
         this.renderRecentMarketActivity(jobs);
     },
 
