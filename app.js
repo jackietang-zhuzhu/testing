@@ -132,17 +132,37 @@ const ui = {
         if (!num || /^(n\/?a|na|nil|none|-+)$/i.test(num)) return 'No PO number';
         return 'PO ' + this.esc(num);
     },
+    // Extra drop-offs saved on a job (jobs.extra_stops, a JSON list of {loc, link}).
+    // Returns [] for ordinary single-drop-off jobs, so nothing extra is ever drawn for them.
+    stops(job) {
+        let raw = job && job.extra_stops;
+        if (typeof raw === 'string') { try { raw = JSON.parse(raw); } catch { raw = []; } }
+        if (!Array.isArray(raw)) return [];
+        return raw
+            .filter(s => s && typeof s.loc === 'string' && s.loc.trim())
+            .map(s => ({ loc: s.loc, link: typeof s.link === 'string' ? s.link : '' }));
+    },
     route(job) {
+        const drops = [{ loc: job.dest_loc, link: job.dest_maps_link }, ...this.stops(job)];
+        const multi = drops.length > 1;
+        const dropHtml = drops.map((d, i) => {
+            const last = i === drops.length - 1;
+            const label = multi ? `Open drop-off ${i + 1} in Maps` : 'Open drop-off in Maps';
+            const tag = multi ? `<span class="route-tag">Drop-off ${i + 1}</span>` : '';
+            return `<li class="route-stop ${last ? 'route-to' : 'route-via'}"><span class="route-place">${this.esc(this.place(d.loc))}</span>${tag}${this.mapLink(d.link, label)}</li>`;
+        }).join('');
         return `
             <ol class="route">
                 <li class="route-stop route-from"><span class="route-place">${this.esc(this.place(job.source_loc))}</span>${this.mapLink(job.source_maps_link, 'Open pickup in Maps')}</li>
-                <li class="route-stop route-to"><span class="route-place">${this.esc(this.place(job.dest_loc))}</span>${this.mapLink(job.dest_maps_link, 'Open drop-off in Maps')}</li>
+                ${dropHtml}
             </ol>`;
     },
     facts(job, { po = false, date = '', dateLabel = 'Delivery', delivered = false } = {}) {
         const items = [];
         if (po) items.push(`<li class="fact"><i class="ri-file-list-3-line"></i>${this.poLabel(job.po_number)}</li>`);
         items.push(`<li class="fact"><i class="ri-box-3-line"></i>${this.esc(job.quantity)} ${this.esc(job.item_desc)}</li>`);
+        const extraDrops = this.stops(job).length;
+        if (extraDrops) items.push(`<li class="fact"><i class="ri-route-line"></i>${extraDrops + 1} drop-offs</li>`);
         if (date) items.push(`<li class="fact"><i class="ri-calendar-line"></i>${this.esc(dateLabel)} ${this.fmtDate(date)}</li>`);
         if (job.unloading_service) items.push(`<li class="fact fact-warn"><i class="ri-hand-coin-line"></i>Unloading required</li>`);
         if (delivered) items.push(`<li class="fact fact-ok"><i class="ri-check-double-line"></i>Delivered</li>`);
@@ -227,6 +247,9 @@ const app = {
     knownStages: null,
     currentBidsJobId: null,
     uploading: 0,
+    factory: null,           // customer's saved pickup {loc, link}, or null
+    editingHadStops: false,
+    MAX_EXTRA_STOPS: 4,      // so a job can have up to 5 drop-offs in total
 
     async init() {
         document.getElementById('login-form').addEventListener('submit', (e) => this.handleLogin(e));
@@ -316,6 +339,7 @@ const app = {
         this.currentUser = null;
         this.currentUserRole = null;
         this.transporterProfile = null; // <-- Added
+        this.factory = null;
         this.myBidsByJob = {};
         this.lastSig = {};
         this.knownRequestIds = null;
@@ -476,7 +500,119 @@ const app = {
     },
 
     // --- UTILS & DB FUNCTIONS ---
-    escapeHTML(value) {
+    // ==========================================
+    // --- EXTRA DROP-OFFS (shared by the RT form 'job' and the customer form 'cj') ---
+    // Nothing is shown until someone taps "Add another drop-off".
+    // ==========================================
+    addStop(prefix, stop = {}) {
+        const box = document.getElementById(prefix + '-extra-stops');
+        if (!box) return;
+        if (box.children.length >= this.MAX_EXTRA_STOPS) {
+            ui.notify(`You can add up to ${this.MAX_EXTRA_STOPS} extra drop-offs.`);
+            return;
+        }
+        const row = document.createElement('div');
+        row.className = 'stop-row';
+        row.innerHTML = `
+            <div class="stop-head">
+                <span class="label stop-title"></span>
+                <button type="button" class="btn btn-danger-ghost btn-sm" onclick="app.removeStop(this)"><i class="ri-close-line"></i> Remove</button>
+            </div>
+            <input type="text" class="input stop-loc" placeholder="e.g. Skudai, JHR" aria-label="Extra drop-off location" maxlength="200" required>
+            <input type="url" class="input stop-link" placeholder="Map link (optional)" aria-label="Extra drop-off map link">`;
+        // values are set through the DOM, never pasted into HTML
+        row.querySelector('.stop-loc').value = stop.loc || '';
+        row.querySelector('.stop-link').value = stop.link || '';
+        box.appendChild(row);
+        this.renumberStops(prefix);
+        if (!stop.loc) row.querySelector('.stop-loc').focus();
+    },
+
+    removeStop(btn) {
+        const row = btn.closest('.stop-row');
+        if (!row) return;
+        const box = row.parentElement;
+        row.remove();
+        this.renumberStops(box.id.replace('-extra-stops', ''));
+    },
+
+    renumberStops(prefix) {
+        const box = document.getElementById(prefix + '-extra-stops');
+        if (!box) return;
+        const rows = Array.from(box.querySelectorAll('.stop-row'));
+        rows.forEach((r, i) => { r.querySelector('.stop-title').textContent = `Drop-off ${i + 2}`; });
+        const addBtn = document.getElementById(prefix + '-add-stop');
+        if (addBtn) addBtn.disabled = rows.length >= this.MAX_EXTRA_STOPS;
+    },
+
+    resetStops(prefix) {
+        const box = document.getElementById(prefix + '-extra-stops');
+        if (box) box.innerHTML = '';
+        this.renumberStops(prefix);
+    },
+
+    fillStops(prefix, stops) {
+        this.resetStops(prefix);
+        (stops || []).forEach(s => this.addStop(prefix, s));
+    },
+
+    collectStops(prefix) {
+        const box = document.getElementById(prefix + '-extra-stops');
+        if (!box) return [];
+        return Array.from(box.querySelectorAll('.stop-row'))
+            .map(r => ({
+                loc: r.querySelector('.stop-loc').value.trim(),
+                link: r.querySelector('.stop-link').value.trim()
+            }))
+            .filter(s => s.loc)
+            .map(s => s.link ? s : { loc: s.loc });
+    },
+
+    // ==========================================
+    // --- CUSTOMER: saved factory address (used as the pickup) ---
+    // ==========================================
+    async loadFactory() {
+        if (this.currentUserRole !== 'customer' || !this.currentUser) return null;
+        const { data, error } = await supabaseClient
+            .from('customers')
+            .select('default_pickup_loc, default_pickup_link')
+            .eq('id', this.currentUser.id)
+            .maybeSingle();
+        if (error) {
+            // e.g. the database columns have not been added yet: just behave as "no saved address"
+            console.warn('Factory address not available:', error.message);
+            this.factory = null;
+            return null;
+        }
+        this.factory = (data && data.default_pickup_loc)
+            ? { loc: data.default_pickup_loc, link: data.default_pickup_link || '' }
+            : null;
+        return this.factory;
+    },
+
+    updateFactoryButton() {
+        const btn = document.getElementById('cj-use-factory');
+        if (btn) btn.style.display = this.factory ? '' : 'none';
+    },
+
+    useFactory() {
+        if (!this.factory) return;
+        document.getElementById('cj-source').value = this.factory.loc;
+        document.getElementById('cj-source-link').value = this.factory.link || '';
+    },
+
+    async saveFactory(loc, link) {
+        if (this.factory && this.factory.loc === loc && (this.factory.link || '') === (link || '')) return; // unchanged
+        const { error } = await supabaseClient.rpc('save_my_factory', { p_loc: loc, p_link: link || '' });
+        if (error) {
+            console.error(error);
+            ui.notify("Your job was sent, but your factory address could not be saved: " + error.message);
+            return;
+        }
+        this.factory = { loc, link: link || '' };
+    },
+
+	escapeHTML(value) {
 		if (value === null || value === undefined) return '';
 		return String(value)
 			.replace(/&/g, '&amp;')
@@ -711,6 +847,10 @@ const app = {
             photo_2_url: photo2Url  
         };
 
+        // Only sent when used, so ordinary single drop-off jobs behave exactly as before
+        const extraStops = this.collectStops('job');
+        if (extraStops.length) newJob.extra_stops = extraStops;
+
         const { error } = await supabaseClient.from('jobs').insert([newJob]);
         
         submitBtn.innerText = originalText;
@@ -722,6 +862,7 @@ const app = {
         } else {
             ui.notify("Job published.");
             document.getElementById('post-job-form').reset();
+            this.resetStops('job');
             this.toggleOtherItem();
             this.showView('rtHome');
             this.fetchJobsForRT();
@@ -892,7 +1033,7 @@ const app = {
 
         const { data: job, error: jobError } = await supabaseClient
             .from('jobs')
-            .select('offered_price, delivery_date, source_loc, dest_loc, quantity, item_desc, po_number, photo_1_url, photo_2_url, source_maps_link, dest_maps_link, remarks, created_at, unloading_service, do_url, do_uploaded_at')
+            .select('*')
             .eq('id', jobId)
             .single();
 
@@ -1130,7 +1271,9 @@ const app = {
 
     openCustomerForm(mode, job = null) {
         document.getElementById('customer-job-form').reset();
+        this.resetStops('cj'); // form.reset() does not remove rows added with "Add another drop-off"
         this.editingJobId = mode === 'edit' ? job.id : null;
+        this.editingHadStops = mode === 'edit' && ui.stops(job).length > 0;
         this.toggleCustomerOtherItem();
         document.getElementById('cj-date').min = new Date().toISOString().split('T')[0];
 
@@ -1143,6 +1286,16 @@ const app = {
         if (job) this.fillCustomerForm(job, mode === 'edit');
         if (mode === 'copy') ui.notify("Copied from your previous job. Please set the date and price.");
         this.showView('customerNewJob');
+
+        // Saved factory address: show the shortcut button, and for a brand-new job fill in the pickup.
+        // The customer can still overwrite it, and drop-off is always left empty.
+        this.updateFactoryButton();
+        this.loadFactory().then(factory => {
+            this.updateFactoryButton();
+            if (!factory || mode !== 'new' || this.currentView !== 'customerNewJob') return;
+            const src = document.getElementById('cj-source');
+            if (!src.value.trim()) this.useFactory(); // never overwrite something already typed
+        });
     },
 
     fillCustomerForm(job, withSchedule) {
@@ -1151,6 +1304,7 @@ const app = {
         set('cj-source-link', job.source_maps_link);
         set('cj-dest', job.dest_loc);
         set('cj-dest-link', job.dest_maps_link);
+        this.fillStops('cj', ui.stops(job));
 
         const sel = document.getElementById('cj-item');
         const known = Array.from(sel.options).map(o => o.value).filter(v => v !== 'Others');
@@ -1229,6 +1383,9 @@ const app = {
             p_photo_1_url: photo1Url,
             p_photo_2_url: photo2Url
         };
+        // Only sent when used (or when an edited job had some that must now be cleared)
+        const extraStops = this.collectStops('cj');
+        if (extraStops.length || this.editingHadStops) payload.p_extra_stops = extraStops;
         const editing = !!this.editingJobId;
         const { error } = editing
             ? await supabaseClient.rpc('update_customer_job', { p_job_id: this.editingJobId, ...payload })
@@ -1243,8 +1400,13 @@ const app = {
             return;
         }
 
+        if (document.getElementById('cj-save-factory').checked) {
+            await this.saveFactory(payload.p_source_loc, payload.p_source_maps_link);
+        }
         ui.notify(editing ? "Changes saved and sent. We will review it shortly." : "Job sent. We will review it shortly.");
         this.editingJobId = null;
+        this.editingHadStops = false;
+        this.resetStops('cj');
         document.getElementById('customer-job-form').reset();
         this.toggleCustomerOtherItem();
         this.showCustomerHome();
