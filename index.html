@@ -52,7 +52,7 @@
                     </form>
                 </div>
                 <p class="auth-foot">New transporter? <button onclick="app.openRegister('transporter')" class="link-btn">Register as transporter</button></p>
-                <p class="auth-foot" style="margin-top:6px">Need to send us a job? <button onclick="app.openRegister('customer')" class="link-btn">Register as customer</button></p>
+                <p class="auth-foot" style="margin-top:6px">Want to place a delivery order? <button onclick="app.openRegister('customer')" class="link-btn">Register as customer</button></p>
             </div>
         </div>
 
@@ -254,9 +254,9 @@
             <div class="page-head">
                 <div>
                     <h2 class="page-title" id="customer-welcome">Welcome</h2>
-                    <p class="page-sub">Your jobs and delivery status.</p>
+                    <p class="page-sub">Your orders and delivery status.</p>
                 </div>
-                <button onclick="app.openCustomerNewJob()" class="btn btn-primary btn-sm"><i class="ri-add-line"></i> New job</button>
+                <button onclick="app.openCustomerNewJob()" class="btn btn-primary btn-sm"><i class="ri-add-line"></i> New order</button>
             </div>
             <div id="customer-jobs-container" class="stack"></div>
         </div>
@@ -264,8 +264,8 @@
         <!-- VIEW: CUSTOMER NEW JOB (draft sent to RT for approval) -->
         <div id="view-customer-new-job" class="view hidden">
             <div class="back-row">
-                <button onclick="app.showCustomerHome()" class="back-btn" aria-label="Back to my jobs"><i class="ri-arrow-left-line"></i></button>
-                <h2 class="page-title" id="cj-title">New job</h2>
+                <button onclick="app.showCustomerHome()" class="back-btn" aria-label="Back to my orders"><i class="ri-arrow-left-line"></i></button>
+                <h2 class="page-title" id="cj-title">New order</h2>
             </div>
 
             <form id="customer-job-form" class="panel form-stack" style="gap:20px">
@@ -362,8 +362,8 @@
                     </div>
                 </fieldset>
 
-                <button type="submit" id="cj-submit" class="btn btn-primary btn-block">Send to RT LorryLink</button>
-                <p class="hint" style="text-align:center">We will review your job and contact you on WhatsApp if we have any questions.</p>
+                <button type="submit" id="cj-submit" class="btn btn-primary btn-block">Place order</button>
+                <p class="hint" style="text-align:center">We will review your order and contact you on WhatsApp if we have any questions.</p>
             </form>
         </div>
 
