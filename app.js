@@ -27,6 +27,8 @@ const views = {
     rtHistory: document.getElementById('view-rt-history'),
 	counterOffer: document.getElementById('view-counter-offer'),
 	rtReviewBids: document.getElementById('view-rt-review-bids'),
+    customerHistory: document.getElementById('view-customer-history'),
+    transporterHistory: document.getElementById('view-transporter-history'),
 };
 
 const navs = {
@@ -259,6 +261,11 @@ const ui = {
     remarks(text) {
         return text ? `<p class="remarks"><b>Remarks:</b> ${this.esc(text)}</p>` : '';
     },
+    // Only jobs that came from a customer have one; jobs the admin posted directly show nothing
+    customerLine(job) {
+        const c = job && job.customers;
+        return (c && c.company_name) ? `<p class="remarks"><b>Customer:</b> ${this.esc(c.company_name)}</p>` : '';
+    },
     price(label, amount) {
         return `<div class="price"><span class="price-label">${this.esc(label)}</span><span class="price-value"><small>RM</small>${this.money(amount)}</span></div>`;
     },
@@ -397,6 +404,15 @@ const app = {
         this.knownJobIds = null;
         this.knownStages = null;
         this.currentBidsJobId = null;
+        this.rtJobsList = [];
+        this.historyList = [];
+        this.boardJobs = [];
+        this.myJobsBids = [];
+        this.customerHistory = [];
+        ['rt', 'hist', 'cust', 'board', 'mine'].forEach(p => ['search', 'from', 'to'].forEach(id => {
+            const el = document.getElementById(p + '-' + id);
+            if (el) el.value = '';
+        }));
         
         // Hide UI elements
         btnLogout.classList.add('hidden');
@@ -414,6 +430,8 @@ const app = {
         document.getElementById('recent-activity-container').innerHTML = '';
         document.getElementById('bids-container').innerHTML = '';
         document.getElementById('customer-jobs-container').innerHTML = '';
+        document.getElementById('customer-history-container').innerHTML = '';
+        document.getElementById('transporter-history-container').innerHTML = '';
         document.getElementById('draft-review-container').innerHTML = '';
         
         document.getElementById('login-form').reset();
@@ -729,8 +747,10 @@ const app = {
                 this.fetchRecentMarketActivity(true);
                 break;
             case 'transporterMyJobs':
+            case 'transporterHistory':
                 this.fetchMyJobs(true); break;
             case 'customerHome':
+            case 'customerHistory':
                 this.fetchCustomerJobs(true); break;
         }
     },
@@ -811,10 +831,18 @@ const app = {
         this.renderRTHistory(jobs || []);
     },
 
-    renderRTHistory(jobs) {
+    renderRTHistory(allJobs) {
+        this.historyList = allJobs;
         const container = document.getElementById('rt-history-container');
-        if (jobs.length === 0) {
+        if (allJobs.length === 0) {
+            this.updateFilterUi('hist', 0, 0);
             container.innerHTML = ui.empty('ri-history-line', 'No history yet', 'Jobs you remove from the active list will appear here.');
+            return;
+        }
+        const jobs = this.filterJobs(allJobs, 'hist');
+        this.updateFilterUi('hist', jobs.length, allJobs.length);
+        if (jobs.length === 0) {
+            container.innerHTML = ui.empty('ri-search-line', 'No matching jobs', 'Try a different name or date.');
             return;
         }
 
@@ -830,6 +858,7 @@ const app = {
                         ${ui.pill('Archived', 'neutral', 'ri-archive-line')}
                         <span class="job-time">${ui.posted(job.created_at)}</span>
                     </div>
+                    ${ui.customerLine(job)}
                     ${ui.route(job)}
                     ${ui.facts(job, { date: job.delivery_date, delivered: !!job.do_url })}
                     ${ui.doSlip(job, { download: true })}
@@ -844,6 +873,70 @@ const app = {
                 </article>
             `;
         }).join('');
+    },
+
+    // ==========================================
+    // --- SEARCH & DATE FILTER (Jobs and History) ---
+    // prefix: 'rt' = Jobs page, 'hist' = History page.
+    // Works on the list already loaded, so the 20s auto-refresh keeps the filter in place.
+    // ==========================================
+    getJobFilter(prefix) {
+        const val = (id) => { const el = document.getElementById(prefix + '-' + id); return el ? el.value.trim() : ''; };
+        const q = val('search').toLowerCase();
+        const from = val('from');
+        const to = val('to');
+        return { q, from, to, active: !!(q || from || to) };
+    },
+
+    // true when the date is inside the chosen from/to range (or no range is chosen)
+    dateInRange(f, raw) {
+        if (!f.from && !f.to) return true;
+        const day = String(raw || '').slice(0, 10); // YYYY-MM-DD, so plain text comparison works
+        if (!day) return false;
+        if (f.from && day < f.from) return false;
+        if (f.to && day > f.to) return false;
+        return true;
+    },
+
+    filterJobs(jobs, prefix) {
+        const f = this.getJobFilter(prefix);
+        if (!f.active) return jobs;
+        const words = f.q.split(/\s+/).filter(Boolean);
+        return jobs.filter(j => {
+            if (!this.dateInRange(f, j.delivery_date)) return false;
+            if (!words.length) return true;
+            const c = j.customers || {};
+            const hay = [
+                c.company_name, c.contact_person,
+                j.source_loc, j.dest_loc, ...ui.stops(j).map(s => s.loc),
+                j.item_desc, j.remarks
+            ].filter(Boolean).join(' ').toLowerCase();
+            return words.every(w => hay.includes(w)); // every word must match somewhere
+        });
+    },
+
+    updateFilterUi(prefix, shown, total) {
+        const f = this.getJobFilter(prefix);
+        const count = document.getElementById(prefix + '-count');
+        const clear = document.getElementById(prefix + '-clear');
+        if (count) count.textContent = (f.active && total) ? `Showing ${shown} of ${total}` : '';
+        if (clear) clear.style.display = f.active ? '' : 'none';
+    },
+
+    applyJobFilter(prefix) {
+        if (prefix === 'hist') this.renderRTHistory(this.historyList || []);
+        else if (prefix === 'cust') this.renderCustomerJobs();
+        else if (prefix === 'board') this.renderTransporterJobs(this.boardJobs || []);
+        else if (prefix === 'mine') this.renderMyJobs(this.myJobsBids || []);
+        else this.renderRTJobs(this.rtJobsList || []);
+    },
+
+    clearJobFilter(prefix) {
+        ['search', 'from', 'to'].forEach(id => {
+            const el = document.getElementById(prefix + '-' + id);
+            if (el) el.value = '';
+        });
+        this.applyJobFilter(prefix);
     },
 
     async restoreJob(jobId) {
@@ -1418,7 +1511,7 @@ const app = {
     },
 
     customerJobsById(jobId) {
-        return (this.customerJobs || []).find(j => String(j.id) === String(jobId));
+        return [...(this.customerJobs || []), ...(this.customerHistory || [])].find(j => String(j.id) === String(jobId));
     },
 
     openCustomerForm(mode, job = null) {
@@ -1757,20 +1850,23 @@ const app = {
             return;
         }
         await this.attachJobDocs(jobs);
-        if (silent && !this.viewIs('customerHome')) return;
+        if (silent && !this.viewIs('customerHome', 'customerHistory')) return;
         // jobs the admin removed (archived) are not shown to customers
         const visible = (jobs || []).filter(j => j.status !== 'archived');
+        const removed = (jobs || []).filter(j => j.status === 'archived'); // shown on the History page
         const prevStages = this.knownStages;
         this.knownStages = {};
         visible.forEach(j => { this.knownStages[j.id] = this.customerStage(j); });
-        const sig = JSON.stringify(visible);
+        const sig = JSON.stringify([visible, removed]);
         if (silent && sig === this.lastSig.customer) return;
         this.lastSig.customer = sig;
         if (silent && prevStages && visible.some(j => prevStages[j.id] !== undefined && prevStages[j.id] !== this.knownStages[j.id])) {
             ui.notify('An order status was updated');
         }
         this.customerJobs = visible;
+        this.customerHistory = removed;
         this.renderCustomerJobs();
+        this.renderCustomerHistory();
     },
 
     // review -> approved -> delivering (a transporter took the job) -> delivered (DO uploaded)
@@ -1798,14 +1894,20 @@ const app = {
 
     renderCustomerJobs() {
         const container = document.getElementById('customer-jobs-container');
-        const all = this.customerJobs || [];
+        const base = this.customerJobs || [];
+        const all = this.filterJobs(base, 'cust'); // delivery-date filter
+        this.updateFilterUi('cust', all.length, base.length);
         const waBase = ui.waLink(RT_WHATSAPP_NUMBER);
         const help = waBase
             ? `<p class="page-sub" style="text-align:center">Need help? <a href="${ui.esc(waBase)}" target="_blank" rel="noopener noreferrer"><i class="ri-whatsapp-line"></i> WhatsApp us</a></p>`
             : '';
 
-        if (all.length === 0) {
+        if (base.length === 0) {
             container.innerHTML = ui.empty('ri-file-list-3-line', 'No orders yet', 'Tap New order to place your first delivery order.') + help;
+            return;
+        }
+        if (all.length === 0) {
+            container.innerHTML = ui.empty('ri-search-line', 'No orders on these dates', 'Try a different date range.') + help;
             return;
         }
 
@@ -1877,6 +1979,51 @@ const app = {
     // ==========================================
     // --- ADMIN: review a customer draft, add PO, post ---
     // ==========================================
+    showCustomerHistory() {
+        this.showView('customerHistory');
+        this.renderCustomerHistory();   // draw what we already have straight away
+        this.fetchCustomerJobs(true);   // then refresh quietly in the background
+    },
+
+    renderCustomerHistory() {
+        const container = document.getElementById('customer-history-container');
+        const jobs = this.customerHistory || [];
+        if (jobs.length === 0) {
+            container.innerHTML = ui.empty('ri-history-line', 'No history yet', 'Orders that have been removed from your list will appear here.');
+            return;
+        }
+        container.innerHTML = jobs.map(job => {
+            const id = ui.esc(job.id);
+            const delivered = !!job.do_url;
+            const pill = delivered
+                ? ui.pill('Delivered', 'go', 'ri-check-double-line')
+                : ui.pill('Removed', 'neutral', 'ri-archive-line');
+            const again = delivered
+                ? `<button class="btn btn-secondary btn-sm" data-id="${id}" onclick="app.openCustomerCopy(this.dataset.id)"><i class="ri-repeat-line"></i> Book again</button>`
+                : '';
+            const price = job.customer_expected_price != null ? ui.price('Your expected price', job.customer_expected_price) : '<span></span>';
+            return `
+                <article class="job-card is-dim">
+                    <div class="job-head">
+                        ${pill}
+                        <span class="job-time">${ui.posted(job.created_at, 'Ordered')}</span>
+                    </div>
+                    ${ui.route(job)}
+                    ${ui.facts(job, { date: job.delivery_date })}
+                    ${ui.photos(job, true)}
+                    ${ui.remarks(job.remarks)}
+                    ${ui.doSlip(job, { showTime: true, timeLabel: 'Delivered' })}
+                    ${ui.poSlip(job)}
+                    ${ui.invSlip(job, { download: true })}
+                    <div class="job-foot">
+                        ${price}
+                        ${again ? `<div class="actions">${again}</div>` : ''}
+                    </div>
+                </article>
+            `;
+        }).join('');
+    },
+
     async openDraftReview(jobId) {
         ui.setTab('requests');
         this.showView('rtReviewDraft');
@@ -2036,21 +2183,70 @@ const app = {
 
         if (error) {
             console.error(error);
-            if (!silent) container.innerHTML = ui.errorBlock(error.message);
+            if (this.viewIs('transporterHistory')) document.getElementById('transporter-history-container').innerHTML = ui.errorBlock(error.message);
+            else if (!silent) container.innerHTML = ui.errorBlock(error.message);
             return;
         }
 
-        if (silent && !this.viewIs('transporterMyJobs')) return;
+        if (silent && !this.viewIs('transporterMyJobs', 'transporterHistory')) return;
         const sig = JSON.stringify(bids);
         if (silent && sig === this.lastSig.myjobs) return;
         this.lastSig.myjobs = sig;
-        this.renderMyJobs(bids);
+        // A job the admin archived leaves My jobs and moves to History
+        const withJob = (bids || []).filter(b => b.jobs);
+        this.renderMyJobs(withJob.filter(b => b.jobs.status !== 'archived'));
+        this.renderTransporterHistory(withJob.filter(b => b.jobs.status === 'archived'));
     },
 
-    renderMyJobs(bids) {
+    showTransporterHistory() {
+        ui.setTab('myhistory');
+        this.showView('transporterHistory');
+        document.getElementById('transporter-history-container').innerHTML = ui.skeleton(2);
+        this.lastSig.myjobs = null; // make sure fresh data is drawn
+        this.fetchMyJobs(true);
+    },
+
+    renderTransporterHistory(bids) {
+        const container = document.getElementById('transporter-history-container');
+        if (!bids.length) {
+            container.innerHTML = ui.empty('ri-history-line', 'No history yet', 'Jobs that have been removed from your list will appear here.');
+            return;
+        }
+        container.innerHTML = bids.map(bid => {
+            const job = bid.jobs;
+            const finalDate = bid.proposed_date || job.delivery_date;
+            return `
+                <article class="job-card is-dim">
+                    <div class="job-head">
+                        ${ui.pill('Archived', 'neutral', 'ri-archive-line')}
+                        <span class="job-time">${ui.posted(job.created_at)}</span>
+                    </div>
+                    ${ui.route(job)}
+                    ${ui.facts(job, { date: finalDate, dateLabel: 'Agreed delivery', delivered: !!job.do_url })}
+                    ${ui.photos(job, true)}
+                    ${ui.remarks(job.remarks)}
+                    ${ui.doSlip(job, { showTime: true })}
+                    <div class="job-foot">
+                        ${ui.price('Your price', bid.proposed_price)}
+                    </div>
+                </article>
+            `;
+        }).join('');
+    },
+
+    renderMyJobs(allBids) {
+        this.myJobsBids = allBids;
         const container = document.getElementById('my-jobs-container');
-        if (bids.length === 0) {
+        if (allBids.length === 0) {
+            this.updateFilterUi('mine', 0, 0);
             container.innerHTML = ui.empty('ri-truck-line', 'No assigned jobs yet', 'Jobs awarded to your company will show up here.');
+            return;
+        }
+        const f = this.getJobFilter('mine');
+        const bids = allBids.filter(b => b.jobs && this.dateInRange(f, b.proposed_date || b.jobs.delivery_date));
+        this.updateFilterUi('mine', bids.length, allBids.length);
+        if (bids.length === 0) {
+            container.innerHTML = ui.empty('ri-search-line', 'No jobs on these dates', 'Try a different date range.');
             return;
         }
 
@@ -2085,10 +2281,18 @@ const app = {
         }).join('');
     },
 
-    renderRTJobs(jobs) {
+    renderRTJobs(allJobs) {
+        this.rtJobsList = allJobs;
         const container = document.getElementById('rt-jobs-container');
-        if (jobs.length === 0) {
+        if (allJobs.length === 0) {
+            this.updateFilterUi('rt', 0, 0);
             container.innerHTML = ui.empty('ri-inbox-line', 'No jobs yet', 'Post a job and transporters can start bidding.');
+            return;
+        }
+        const jobs = this.filterJobs(allJobs, 'rt');
+        this.updateFilterUi('rt', jobs.length, allJobs.length);
+        if (jobs.length === 0) {
+            container.innerHTML = ui.empty('ri-search-line', 'No matching jobs', 'Try a different name or date.');
             return;
         }
 
@@ -2102,6 +2306,7 @@ const app = {
                         ${isAssigned ? ui.pill('Assigned', 'go', 'ri-check-line') : ui.pill('Open for bids', 'info')}
                         <span class="job-time">${ui.posted(job.created_at)}</span>
                     </div>
+                    ${ui.customerLine(job)}
                     ${ui.route(job)}
                     ${ui.facts(job, { date: job.delivery_date, delivered: isAssigned && !!job.do_url })}
                     ${ui.poSlip(job, { download: true })}
@@ -2122,7 +2327,11 @@ const app = {
         }).join('');
     },
 
-    renderTransporterJobs(jobs) {
+    renderTransporterJobs(allJobs) {
+        allJobs = allJobs || [];
+        this.boardJobs = allJobs;
+        const jobs = this.filterJobs(allJobs, 'board'); // delivery-date filter
+        this.updateFilterUi('board', jobs.length, allJobs.length);
         const banned = this.isBanned();
         let bannerHtml = '';
 
@@ -2141,7 +2350,10 @@ const app = {
         }
 
         if (jobs.length === 0) {
-            transporterJobsContainer.innerHTML = bannerHtml + ui.empty('ri-truck-line', 'No open jobs right now', 'New loads appear here as soon as they are posted.');
+            const filtered = allJobs.length > 0;
+            transporterJobsContainer.innerHTML = bannerHtml + (filtered
+                ? ui.empty('ri-search-line', 'No jobs on these dates', 'Try a different date range.')
+                : ui.empty('ri-truck-line', 'No open jobs right now', 'New loads appear here as soon as they are posted.'));
             return;
         }
 
