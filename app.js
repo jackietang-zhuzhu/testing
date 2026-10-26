@@ -1548,7 +1548,7 @@ const app = {
 
     // submit_customer_job may return the new job's id (as text, or inside a row), or nothing at all
     // ---- Customer PO and our invoice (INV) ----
-    // Both are files kept apart from the job (tables job_customer_po and job_invoice) so transporters never get them.
+    // Both are files kept apart from the job (table job_docs) so transporters never get them.
     // The customer uploads the PO once the job is delivered; we then upload the INV, which the customer can download.
     checkDocFile(file, noun) {
         const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
@@ -1623,28 +1623,22 @@ const app = {
         else this.fetchJobsForRT();
     },
 
-    // Adds job.customer_po and job.invoice_file ({ url, uploaded_at } or null) to each job. These are extras: if
-    // they cannot be loaded the jobs still show. Row-level security decides what comes back: a customer only gets
-    // their own, the admin gets all, transporters get none.
+    // Adds job.customer_po and job.invoice_file ({ url, uploaded_at } or null) to each job, from the job_docs table
+    // (one row per job). These are extras: if they cannot be loaded the jobs still show. Row-level security decides
+    // what comes back: a customer only gets their own, the admin gets all, transporters get none.
     async attachJobDocs(jobs) {
         if (!jobs || !jobs.length) return jobs;
-        const one = jobs.length === 1 ? jobs[0].id : null;
-        const load = (table) => {
-            let q = supabaseClient.from(table).select('job_id, file_url, uploaded_at');
-            if (one != null) q = q.eq('job_id', one);
-            return q;
-        };
-        const [po, inv] = await Promise.all([load('job_customer_po'), load('job_invoice')]);
-        const index = (res, label) => {
-            if (res.error) { console.error(label + ' load error:', res.error); return new Map(); }
-            return new Map((res.data || []).map(r => [String(r.job_id), r]));
-        };
-        const poBy = index(po, 'PO');
-        const invBy = index(inv, 'Invoice');
-        const pack = (r) => r ? { url: r.file_url, uploaded_at: r.uploaded_at } : null;
+        let query = supabaseClient.from('job_docs')
+            .select('job_id, po_url, po_uploaded_at, invoice_url, invoice_uploaded_at');
+        if (jobs.length === 1) query = query.eq('job_id', jobs[0].id);
+        const { data, error } = await query;
+        if (error) { console.error('Documents load error:', error); return jobs; }
+        const byJob = new Map((data || []).map(r => [String(r.job_id), r]));
+        const pack = (url, at) => url ? { url, uploaded_at: at } : null;
         jobs.forEach(x => {
-            x.customer_po = pack(poBy.get(String(x.id)));
-            x.invoice_file = pack(invBy.get(String(x.id)));
+            const r = byJob.get(String(x.id));
+            x.customer_po = r ? pack(r.po_url, r.po_uploaded_at) : null;
+            x.invoice_file = r ? pack(r.invoice_url, r.invoice_uploaded_at) : null;
         });
         return jobs;
     },
