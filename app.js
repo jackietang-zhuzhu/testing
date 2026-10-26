@@ -971,14 +971,21 @@ const app = {
     },
 
     clearHistory() {
-        const visible = (this.historyList || []).filter(j => !this.hiddenHistoryIds().has(String(j.id)));
-        if (!visible.length) return;
-        if (!confirm(`Clear ${visible.length} job${visible.length === 1 ? '' : 's'} from History? They stay in the database, they are only hidden here.`)) return;
-        const ids = this.hiddenHistoryIds();
-        visible.forEach(j => ids.add(String(j.id)));
-        try { localStorage.setItem('rt_hidden_history', JSON.stringify([...ids])); }
+        const hidden = this.hiddenHistoryIds();
+        const visible = (this.historyList || []).filter(j => !hidden.has(String(j.id)));
+        const f = this.getJobFilter('hist');
+        // With a search or date range chosen, only the jobs matching it are cleared
+        const targets = this.filterJobs(visible, 'hist');
+        if (!targets.length) { ui.notify('No jobs to clear.'); return; }
+        const n = targets.length;
+        const what = f.active
+            ? `Clear the ${n} job${n === 1 ? '' : 's'} matching your current filter (delivery ${f.from || 'any'} to ${f.to || 'any'}${f.q ? `, search "${f.q}"` : ''})?`
+            : `Clear all ${n} job${n === 1 ? '' : 's'} from History?`;
+        if (!confirm(what + ' They stay in the database, they are only hidden here.')) return;
+        targets.forEach(j => hidden.add(String(j.id)));
+        try { localStorage.setItem('rt_hidden_history', JSON.stringify([...hidden])); }
         catch { ui.notify('Could not clear history on this browser.'); return; }
-        ui.notify('History cleared.');
+        ui.notify(`${n} job${n === 1 ? '' : 's'} cleared from History.`);
         this.renderRTHistory(this.historyList || []);
     },
 
@@ -991,7 +998,12 @@ const app = {
         if (kept.length !== hiddenIds.size) { try { localStorage.setItem('rt_hidden_history', JSON.stringify(kept)); } catch {} }
         const allJobs = fetched.filter(j => !kept.includes(String(j.id)));
         const clearBtn = document.getElementById('rt-clear-history');
-        if (clearBtn) clearBtn.classList.toggle('hidden', allJobs.length === 0);
+        if (clearBtn) {
+            clearBtn.classList.toggle('hidden', allJobs.length === 0);
+            clearBtn.innerHTML = this.getJobFilter('hist').active
+                ? '<i class="ri-eraser-line"></i> Clear shown'
+                : '<i class="ri-eraser-line"></i> Clear history';
+        }
         const container = document.getElementById('rt-history-container');
         if (allJobs.length === 0) {
             this.updateFilterUi('hist', 0, 0);
