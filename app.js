@@ -140,18 +140,50 @@ const ui = {
             .filter(s => s && typeof s.loc === 'string' && s.loc.trim())
             .map(s => ({ loc: s.loc, link: typeof s.link === 'string' ? s.link : '' }));
     },
-    route(job) {
+    // Person in charge + phone for each stop, and the preferred time, saved on jobs.contacts as
+    //   { pickup: { pic, phone }, drops: [{ pic, phone }, ...], slot }   (drops[0] = main drop-off, then the extra ones)
+    contactsOf(job) {
+        let c = job && job.contacts;
+        if (typeof c === 'string') { try { c = JSON.parse(c); } catch { c = null; } }
+        if (!c || typeof c !== 'object') c = {};
+        const one = (x) => (x && typeof x === 'object')
+            ? { pic: String(x.pic || '').trim(), phone: String(x.phone || '').trim() }
+            : { pic: '', phone: '' };
+        return {
+            pickup: one(c.pickup),
+            drops: Array.isArray(c.drops) ? c.drops.map(one) : [],
+            slot: (c.slot === 'Morning' || c.slot === 'Afternoon') ? c.slot : ''
+        };
+    },
+    hasContacts(job) {
+        const c = this.contactsOf(job);
+        return !!(c.slot || c.pickup.pic || c.pickup.phone || c.drops.some(d => d.pic || d.phone));
+    },
+    contactLine(p) {
+        if (!p || (!p.pic && !p.phone)) return '';
+        const digits = String(p.phone || '').replace(/[^\d+]/g, '');
+        const who = p.pic ? `<span><i class="ri-user-3-line"></i> ${this.esc(p.pic)}</span>` : '';
+        const tel = p.phone
+            ? (digits ? `<a href="tel:${this.esc(digits)}"><i class="ri-phone-line"></i> ${this.esc(p.phone)}</a>` : `<span>${this.esc(p.phone)}</span>`)
+            : '';
+        return `<span class="route-contact">${who}${tel}</span>`;
+    },
+    // contacts: false hides the phone numbers (used on the open job board; they show once a job is assigned)
+    route(job, { contacts = true } = {}) {
         const drops = [{ loc: job.dest_loc, link: job.dest_maps_link }, ...this.stops(job)];
         const multi = drops.length > 1;
+        const cs = contacts ? this.contactsOf(job) : null;
         const dropHtml = drops.map((d, i) => {
             const last = i === drops.length - 1;
             const label = multi ? `Open drop-off ${i + 1} in Maps` : 'Open drop-off in Maps';
             const tag = multi ? `<span class="route-tag">Drop-off ${i + 1}</span>` : '';
-            return `<li class="route-stop ${last ? 'route-to' : 'route-via'}"><span class="route-place">${this.esc(this.place(d.loc))}</span>${tag}${this.mapLink(d.link, label)}</li>`;
+            const line = cs ? this.contactLine(cs.drops[i]) : '';
+            return `<li class="route-stop ${last ? 'route-to' : 'route-via'}${line ? ' has-contact' : ''}"><span class="route-place">${this.esc(this.place(d.loc))}</span>${tag}${this.mapLink(d.link, label)}${line}</li>`;
         }).join('');
+        const pickLine = cs ? this.contactLine(cs.pickup) : '';
         return `
             <ol class="route">
-                <li class="route-stop route-from"><span class="route-place">${this.esc(this.place(job.source_loc))}</span>${this.mapLink(job.source_maps_link, 'Open pickup in Maps')}</li>
+                <li class="route-stop route-from${pickLine ? ' has-contact' : ''}"><span class="route-place">${this.esc(this.place(job.source_loc))}</span>${this.mapLink(job.source_maps_link, 'Open pickup in Maps')}${pickLine}</li>
                 ${dropHtml}
             </ol>`;
     },
@@ -161,6 +193,8 @@ const ui = {
         const extraDrops = this.stops(job).length;
         if (extraDrops) items.push(`<li class="fact"><i class="ri-route-line"></i>${extraDrops + 1} drop-offs</li>`);
         if (date) items.push(`<li class="fact"><i class="ri-calendar-line"></i>${this.esc(dateLabel)} ${this.fmtDate(date)}</li>`);
+        const slot = this.contactsOf(job).slot;
+        if (slot) items.push(`<li class="fact"><i class="ri-time-line"></i>${this.esc(slot)} delivery</li>`);
         if (job.unloading_service) items.push(`<li class="fact fact-warn"><i class="ri-hand-coin-line"></i>Unloading required</li>`);
         if (delivered) items.push(`<li class="fact fact-ok"><i class="ri-check-double-line"></i>Delivered</li>`);
         return `<ul class="facts">${items.join('')}</ul>`;
@@ -186,27 +220,94 @@ const ui = {
     isPdf(url) {
         return /\.pdf$/i.test(String(url || '').split(/[?#]/)[0]);
     },
+    // ---- Delivery Orders (DO) ----
+    // A job with one drop-off has one DO (jobs.do_url). A job with several drop-offs keeps one DO per drop-off in
+    // jobs.dos ([{ stop, url, uploaded_at }], stop 0 = the main drop-off) and only gets do_url (= delivered)
+    // once every drop-off has its DO. Older jobs just have do_url.
+    parseDos(job) {
+        let raw = job && job.dos;
+        if (typeof raw === 'string') { try { raw = JSON.parse(raw); } catch { raw = null; } }
+        if (!Array.isArray(raw)) return [];
+        return raw
+            .map(d => ({ stop: Number(d && d.stop) || 0, url: app.safeUrl(d && d.url), uploaded_at: d && d.uploaded_at }))
+            .filter(d => d.url)
+            .sort((a, b) => a.stop - b.stop);
+    },
+    dropLabel(job, i) {
+        const drops = [job.dest_loc, ...this.stops(job).map(s => s.loc)];
+        return `Drop-off ${i + 1}` + (drops[i] ? ` · ${this.place(drops[i])}` : '');
+    },
+    dosOf(job) {
+        if (!job) return [];
+        const list = this.parseDos(job);
+        if (list.length) return list.map(d => ({ ...d, label: this.dropLabel(job, d.stop) }));
+        return job.do_url ? [{ stop: 0, label: '', url: job.do_url, uploaded_at: job.do_uploaded_at }] : [];
+    },
     doSlip(job, { showTime = false, timeLabel = 'Uploaded', download = false } = {}) {
-        if (!job || !job.do_url) return '';
-        const when = (showTime && job.do_uploaded_at)
-            ? `<span style="font-weight:400;font-size:.75rem;color:var(--muted)">${this.esc(timeLabel)} ${this.fmtDateTime(job.do_uploaded_at)}</span>`
-            : '';
-        const url = this.esc(job.do_url);
-        const thumb = this.isPdf(job.do_url)
-            ? `<a class="photo-thumb is-file" href="${url}" target="_blank" rel="noopener noreferrer" title="Open DO (PDF)">
+        const items = this.dosOf(job);
+        if (!items.length) return '';
+        const muted = (text) => `<span style="font-weight:400;font-size:.75rem;color:var(--muted)">${this.esc(text)}</span>`;
+        const timeOf = (d) => (showTime && d.uploaded_at) ? muted(`${timeLabel} ${this.fmtDateTime(d.uploaded_at)}`) : '';
+        const thumbOf = (rawUrl) => {
+            const url = this.esc(rawUrl);
+            return this.isPdf(rawUrl)
+                ? `<a class="photo-thumb is-file" href="${url}" target="_blank" rel="noopener noreferrer" title="Open DO (PDF)">
                     <i class="ri-file-pdf-2-line"></i><span>PDF</span>
                 </a>`
-            : `<a class="photo-thumb" href="${url}" target="_blank" rel="noopener noreferrer">
+                : `<a class="photo-thumb" href="${url}" target="_blank" rel="noopener noreferrer">
                     <img src="${url}" alt="Delivery Order" loading="lazy">
                 </a>`;
-        const dl = download
-            ? `<a class="btn btn-secondary btn-sm" href="${this.esc(this.downloadUrl(job.do_url))}" download><i class="ri-download-2-line"></i> Download</a>`
+        };
+        const dlOf = (rawUrl, name) => download
+            ? `<a class="btn btn-secondary btn-sm" href="${this.esc(this.downloadUrl(rawUrl, name))}" download><i class="ri-download-2-line"></i> Download</a>`
             : '';
-        // One grey box (same look as Remarks): title + time on top, thumbnail + download below
-        return `<div class="remarks do-block">
-            <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:4px 12px"><b>Delivery Order (DO)</b>${when}</div>
-            <div class="photo-strip is-small" style="align-items:center;gap:12px;margin-top:8px">${thumb}${dl}</div>
+
+        // One DO: one grey box (same look as Remarks): title + time on top, thumbnail + download below
+        if (!items[0].label) {
+            const d = items[0];
+            return `<div class="remarks do-block">
+            <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:4px 12px"><b>Delivery Order (DO)</b>${timeOf(d)}</div>
+            <div class="photo-strip is-small" style="align-items:center;gap:12px;margin-top:8px">${thumbOf(d.url)}${dlOf(d.url)}</div>
         </div>`;
+        }
+
+        // One DO per drop-off
+        const total = this.stops(job).length + 1;
+        return `<div class="remarks do-block">
+            <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:4px 12px"><b>Delivery Orders (DO)</b>${muted(`${items.length} of ${total} uploaded`)}</div>
+            ${items.map(d => `<div class="do-item">
+                <div class="do-item-head"><span>${this.esc(d.label)}</span>${timeOf(d)}</div>
+                <div class="photo-strip is-small" style="align-items:center;gap:12px;margin-top:6px">${thumbOf(d.url)}${dlOf(d.url, 'Delivery-Order-Drop-off-' + (d.stop + 1))}</div>
+            </div>`).join('')}
+        </div>`;
+    },
+    // Transporter: a job with several drop-offs gets one upload button per drop-off
+    doStopMode(job) {
+        return this.stops(job).length > 0 && (this.parseDos(job).length > 0 || !job.do_url);
+    },
+    doStopUploads(job) {
+        if (!this.doStopMode(job)) return '';
+        const have = new Set(this.parseDos(job).map(d => d.stop));
+        const total = this.stops(job).length + 1;
+        const rows = Array.from({ length: total }, (_, i) => {
+            const done = have.has(i);
+            return `<div class="do-upload-row">
+                <span class="do-upload-label">${this.esc(this.dropLabel(job, i))}</span>
+                <label class="btn ${done ? 'btn-secondary' : 'btn-primary'} btn-sm" style="cursor:pointer">
+                    <i class="ri-upload-2-line"></i> ${done ? 'Replace DO' : 'Upload DO'}
+                    <input type="file" accept="image/*,application/pdf" hidden data-job-id="${this.esc(job.id)}" data-stop="${i}" ${done ? `onclick="if(!confirm('This will replace the DO already uploaded for this drop-off. Continue?')) event.preventDefault()"` : ''} onchange="app.uploadDO(this)">
+                </label>
+            </div>`;
+        }).join('');
+        return `<div class="remarks do-uploads"><b>Upload one DO for each drop-off</b>${rows}<span class="hint">Image or PDF, max 10 MB. The job counts as delivered once every drop-off has its DO.</span></div>`;
+    },
+    // What the admin still has to chase on a customer's delivered job:
+    // 'po' = the customer's PO is not in yet, 'inv' = the PO is in but our invoice is not. Jobs the admin posted himself have no customer, so nothing is flagged.
+    todoOf(job) {
+        if (!job || job.status !== 'assigned' || !job.do_url || !job.customers) return '';
+        if (!job.customer_po) return 'po';
+        if (!job.invoice_file) return 'inv';
+        return '';
     },
     // A document attached to a job but stored apart from it, so transporters never receive it:
     //   job.customer_po   = { url, uploaded_at }  the customer's own PO (uploaded after delivery)
@@ -589,10 +690,16 @@ const app = {
                 <button type="button" class="btn btn-danger-ghost btn-sm" onclick="app.removeStop(this)"><i class="ri-close-line"></i> Remove</button>
             </div>
             <input type="text" class="input stop-loc" placeholder="e.g. Skudai, JHR" aria-label="Extra drop-off location" maxlength="200" required>
-            <input type="url" class="input stop-link" placeholder="Map link (optional)" aria-label="Extra drop-off map link">`;
+            <input type="url" class="input stop-link" placeholder="Map link (optional)" aria-label="Extra drop-off map link">
+            <div class="field-row">
+                <div class="field"><input type="text" class="input stop-pic" placeholder="Person in charge" aria-label="Extra drop-off person in charge" maxlength="80" autocomplete="off" required></div>
+                <div class="field"><input type="tel" class="input stop-phone" placeholder="Contact number" aria-label="Extra drop-off contact number" inputmode="tel" minlength="7" maxlength="20" autocomplete="off" required></div>
+            </div>`;
         // values are set through the DOM, never pasted into HTML
         row.querySelector('.stop-loc').value = stop.loc || '';
         row.querySelector('.stop-link').value = stop.link || '';
+        row.querySelector('.stop-pic').value = stop.pic || '';
+        row.querySelector('.stop-phone').value = stop.phone || '';
         box.appendChild(row);
         this.renumberStops(prefix);
         if (!stop.loc) row.querySelector('.stop-loc').focus();
@@ -636,6 +743,32 @@ const app = {
             }))
             .filter(s => s.loc)
             .map(s => s.link ? s : { loc: s.loc });
+    },
+
+    // Person in charge + contact number for the pickup and every drop-off, and the preferred time.
+    // Same row filter as collectStops, so drops[i] always lines up with the stops. Returns null when nothing was entered.
+    collectContacts(prefix) {
+        const val = (id) => { const el = document.getElementById(prefix + '-' + id); return el ? el.value.trim() : ''; };
+        const box = document.getElementById(prefix + '-extra-stops');
+        const rows = box ? Array.from(box.querySelectorAll('.stop-row')).filter(r => r.querySelector('.stop-loc').value.trim()) : [];
+        const out = {
+            pickup: { pic: val('source-pic'), phone: val('source-phone') },
+            drops: [
+                { pic: val('dest-pic'), phone: val('dest-phone') },
+                ...rows.map(r => ({ pic: r.querySelector('.stop-pic').value.trim(), phone: r.querySelector('.stop-phone').value.trim() }))
+            ],
+            slot: val('slot')
+        };
+        const any = out.slot || out.pickup.pic || out.pickup.phone || out.drops.some(d => d.pic || d.phone);
+        return any ? out : null;
+    },
+
+    contactsError(prefix) {
+        const c = this.collectContacts(prefix);
+        if (!c) return '';
+        const bad = (p) => p && p.phone && !(/^[0-9+\-\s()]{7,20}$/.test(p.phone) && (p.phone.match(/\d/g) || []).length >= 7);
+        if (bad(c.pickup) || c.drops.some(bad)) return 'Please enter a valid contact number, for example 012-345 6789.';
+        return '';
     },
 
     // ==========================================
@@ -906,10 +1039,12 @@ const app = {
             if (!this.dateInRange(f, j.delivery_date)) return false;
             if (!words.length) return true;
             const c = j.customers || {};
+            const cs = ui.contactsOf(j);
             const hay = [
                 c.company_name, c.contact_person,
                 j.source_loc, j.dest_loc, ...ui.stops(j).map(s => s.loc),
-                j.item_desc, j.remarks
+                j.item_desc, j.remarks,
+                cs.pickup.pic, cs.pickup.phone, ...cs.drops.flatMap(d => [d.pic, d.phone])
             ].filter(Boolean).join(' ').toLowerCase();
             return words.every(w => hay.includes(w)); // every word must match somewhere
         });
@@ -1065,6 +1200,9 @@ const app = {
             itemDesc = 'Others: ' + other;
         }
         
+        const contactProblem = this.contactsError('job');
+        if (contactProblem) { ui.notify(contactProblem); return; }
+
         const submitBtn = e.target.querySelector('button[type="submit"]');
         const originalText = submitBtn.innerText;
         submitBtn.innerText = 'Uploading & Publishing...';
@@ -1092,6 +1230,9 @@ const app = {
         // Only sent when used, so ordinary single drop-off jobs behave exactly as before
         const extraStops = this.collectStops('job');
         if (extraStops.length) newJob.extra_stops = extraStops;
+        // Same idea for the contacts: only sent when filled in
+        const contacts = this.collectContacts('job');
+        if (contacts) newJob.contacts = contacts;
 
         const { error } = await supabaseClient.from('jobs').insert([newJob]);
         
@@ -1458,15 +1599,18 @@ const app = {
     async unassignJob(jobId) {
         if (!confirm("Are you sure you want to undo this assignment? The job will be returned to the open market.")) return;
         
+        const reset = {
+            status: 'open',
+            accepted_price: null,
+            assigned_at: null,
+            do_url: null,
+            do_uploaded_at: null
+        };
+        const known = (this.rtJobsList || []).find(j => String(j.id) === String(jobId));
+        if (known && known.dos != null) reset.dos = null;
         const { data: updatedJob, error: jobError } = await supabaseClient
             .from('jobs')
-            .update({ 
-                status: 'open',
-                accepted_price: null,
-                assigned_at: null,
-                do_url: null,
-                do_uploaded_at: null
-            })
+            .update(reset)
             .eq('id', jobId)
             .select(); 
         
@@ -1519,6 +1663,7 @@ const app = {
         this.resetStops('cj'); // form.reset() does not remove rows added with "Add another drop-off"
         this.editingJobId = mode === 'edit' ? job.id : null;
         this.editingHadStops = mode === 'edit' && ui.stops(job).length > 0;
+        this.editingHadContacts = mode === 'edit' && ui.hasContacts(job);
         this.toggleCustomerOtherItem();
         document.getElementById('cj-date').min = new Date().toISOString().split('T')[0];
 
@@ -1549,7 +1694,13 @@ const app = {
         set('cj-source-link', job.source_maps_link);
         set('cj-dest', job.dest_loc);
         set('cj-dest-link', job.dest_maps_link);
-        this.fillStops('cj', ui.stops(job));
+        const cs = ui.contactsOf(job);
+        set('cj-source-pic', cs.pickup.pic);
+        set('cj-source-phone', cs.pickup.phone);
+        set('cj-dest-pic', (cs.drops[0] || {}).pic);
+        set('cj-dest-phone', (cs.drops[0] || {}).phone);
+        set('cj-slot', cs.slot);
+        this.fillStops('cj', ui.stops(job).map((s, i) => ({ ...s, ...(cs.drops[i + 1] || {}) })));
 
         const sel = document.getElementById('cj-item');
         const known = Array.from(sel.options).map(o => o.value).filter(v => v !== 'Others');
@@ -1612,6 +1763,8 @@ const app = {
         e.preventDefault();
         const itemDesc = this.customerItemDesc();
         if (!itemDesc) return;
+        const contactProblem = this.contactsError('cj');
+        if (contactProblem) { ui.notify(contactProblem); return; }
 
         const v = (id) => document.getElementById(id).value.trim();
         const stops = this.collectStops('cj');
@@ -1623,12 +1776,15 @@ const app = {
         const row = (label, valueHtml, cls = '') =>
             rows.push(`<div class="confirm-row ${cls}"><dt>${label}</dt><dd>${valueHtml}</dd></div>`);
 
-        row('Pickup', ui.esc(v('cj-source')));
+        const cs = this.collectContacts('cj') || { pickup: {}, drops: [], slot: '' };
+        const who = (p) => (p && (p.pic || p.phone)) ? `<br><small>${[p.pic, p.phone].filter(Boolean).map(x => ui.esc(x)).join(' &middot; ')}</small>` : '';
+        row('Pickup', ui.esc(v('cj-source')) + who(cs.pickup));
         row(drops.length > 1 ? 'Drop-offs' : 'Drop-off',
-            drops.map((d, i) => (drops.length > 1 ? `${i + 1}. ` : '') + ui.esc(d)).join('<br>'));
+            drops.map((d, i) => (drops.length > 1 ? `${i + 1}. ` : '') + ui.esc(d) + who(cs.drops[i])).join('<br>'));
         row('Load', `${ui.esc(v('cj-qty'))} &times; ${ui.esc(itemDesc.replace(/^Others:\s*/, ''))}`);
         row('Unloading', document.getElementById('cj-unloading').checked ? 'Required' : 'Not needed');
         row('Delivery date', ui.fmtDate(v('cj-date')));
+        if (cs.slot) row('Preferred time', ui.esc(cs.slot));
         row('Expected price', `RM ${ui.money(parseFloat(v('cj-price')))}`, 'is-price');
         if (remarks) row('Remarks', ui.esc(remarks));
         if (photoCount) row('Photos', `${photoCount} attached`);
@@ -1710,6 +1866,13 @@ const app = {
             if (stopsError) { console.error(stopsError); failed.push('the extra drop-offs'); }
         }
 
+        // Same for the contacts (person in charge + phone): their own step, and skipped when there is nothing to save or clear
+        const contacts = this.collectContacts('cj');
+        if (contacts || this.editingHadContacts) {
+            const { error: contactsError } = await supabaseClient.rpc('set_my_job_contacts', { p_contacts: contacts, p_job_id: jobId });
+            if (contactsError) { console.error(contactsError); failed.push('the contact details'); }
+        }
+
         restore();
         document.getElementById('confirm-modal').classList.add('hidden');
         this.confirmReturnFocus = null;
@@ -1724,6 +1887,7 @@ const app = {
         }
         this.editingJobId = null;
         this.editingHadStops = false;
+        this.editingHadContacts = false;
         this.resetStops('cj');
         document.getElementById('customer-job-form').reset();
         this.toggleCustomerOtherItem();
@@ -1827,6 +1991,24 @@ const app = {
         return jobs;
     },
 
+    // Adds job.contacts and job.dos to the customer's own jobs. They come from the view customer_job_extras
+    // (the customer_jobs view itself is left alone). If it is not there yet the orders still show without them.
+    async attachJobExtras(jobs) {
+        if (!jobs || !jobs.length || this.noJobExtras) return jobs;
+        const { data, error } = await supabaseClient.from('customer_job_extras').select('job_id, contacts, dos');
+        if (error) {
+            console.error('Job extras load error:', error);
+            if (/does not exist|schema cache|relation/i.test(error.message || '')) this.noJobExtras = true; // stop asking until the page is reloaded
+            return jobs;
+        }
+        const byJob = new Map((data || []).map(r => [String(r.job_id), r]));
+        jobs.forEach(x => {
+            const r = byJob.get(String(x.id));
+            if (r) { x.contacts = r.contacts; x.dos = r.dos; }
+        });
+        return jobs;
+    },
+
     extractJobId(data) {
         if (typeof data === 'string') return data;
         if (Array.isArray(data)) data = data[0];
@@ -1850,6 +2032,7 @@ const app = {
             return;
         }
         await this.attachJobDocs(jobs);
+        await this.attachJobExtras(jobs);
         if (silent && !this.viewIs('customerHome', 'customerHistory')) return;
         // jobs the admin removed (archived) are not shown to customers
         const visible = (jobs || []).filter(j => j.status !== 'archived');
@@ -2118,6 +2301,8 @@ const app = {
         const file = input.files && input.files[0];
         const jobId = input.dataset.jobId;
         if (!file || !jobId) return;
+        // data-stop is only set on the per-drop-off buttons of a job with several drop-offs
+        const stop = (input.dataset.stop === undefined || input.dataset.stop === '') ? null : parseInt(input.dataset.stop, 10);
 
         const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
         if (!file.type.startsWith('image/') && !isPdf) {
@@ -2134,7 +2319,7 @@ const app = {
         this.uploading = Date.now();
         ui.notify("Uploading DO...");
         const fileExt = (isPdf ? 'pdf' : file.name.split('.').pop()).toLowerCase();
-        const filePath = `public/do-${jobId}-${Date.now()}.${fileExt}`;
+        const filePath = `public/do-${jobId}${stop === null ? '' : '-s' + stop}-${Date.now()}.${fileExt}`;
 
         const { error: uploadError } = await supabaseClient.storage
             .from('job-photos')
@@ -2152,10 +2337,9 @@ const app = {
             .from('job-photos')
             .getPublicUrl(filePath);
 
-        const { error: saveError } = await supabaseClient.rpc('attach_do', {
-            p_job_id: jobId,
-            p_url: publicUrlData.publicUrl
-        });
+        const { error: saveError } = stop === null
+            ? await supabaseClient.rpc('attach_do', { p_job_id: jobId, p_url: publicUrlData.publicUrl })
+            : await supabaseClient.rpc('attach_do_stop', { p_job_id: jobId, p_stop: stop, p_url: publicUrlData.publicUrl });
 
         if (saveError) {
             console.error('DO save error:', saveError);
@@ -2166,7 +2350,7 @@ const app = {
         }
 
         this.uploading = 0;
-        ui.notify("DO uploaded.");
+        ui.notify(stop === null ? "DO uploaded." : `DO uploaded for drop-off ${stop + 1}.`);
         this.fetchMyJobs();
     },
 
@@ -2254,6 +2438,7 @@ const app = {
             const job = bid.jobs;
             if (!job) return '';
             const finalDate = bid.proposed_date || job.delivery_date;
+            const stopMode = ui.doStopMode(job); // several drop-offs: one upload button per drop-off instead of the single one
 
             return `
                 <article class="job-card is-mine">
@@ -2266,19 +2451,25 @@ const app = {
                     ${ui.photos(job)}
                     ${ui.remarks(job.remarks)}
                     ${ui.doSlip(job)}
+                    ${ui.doStopUploads(job)}
                     <div class="job-foot">
                         ${ui.price('Your price', bid.proposed_price)}
-                        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
+                        ${stopMode ? '' : `<div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
                         <label class="btn ${job.do_url ? 'btn-secondary' : 'btn-primary'} btn-sm" style="cursor:pointer">
                             <i class="ri-upload-2-line"></i> ${job.do_url ? 'Replace DO' : 'Upload DO'}
                             <input type="file" accept="image/*,application/pdf" hidden data-job-id="${ui.esc(job.id)}" ${job.do_url ? `onclick="if(!confirm('This will replace the DO you already uploaded. Continue?')) event.preventDefault()"` : ''} onchange="app.uploadDO(this)">
                         </label>
                         <span class="hint">Image or PDF, max 10 MB</span>
-                        </div>
+                        </div>`}
                     </div>
                 </article>
             `;
         }).join('');
+    },
+
+    setRtTodo(key) {
+        this.rtTodo = key;
+        this.renderRTJobs(this.rtJobsList || []);
     },
 
     renderRTJobs(allJobs) {
@@ -2296,14 +2487,36 @@ const app = {
             return;
         }
 
-        container.innerHTML = jobs.map(job => {
+        // Delivered customer jobs that still need something from us: waiting for the customer's PO, or our INV still to upload
+        const counts = {
+            all: jobs.length,
+            po: jobs.filter(j => ui.todoOf(j) === 'po').length,
+            inv: jobs.filter(j => ui.todoOf(j) === 'inv').length
+        };
+        const active = (this.rtTodo && counts[this.rtTodo] !== undefined) ? this.rtTodo : 'all';
+        const todoChips = (counts.po + counts.inv > 0 || active !== 'all')
+            ? `<div class="chips">${[['all', 'All'], ['po', 'Waiting for PO'], ['inv', 'INV to upload']]
+                .filter(([key]) => key === 'all' || key === active || counts[key] > 0)
+                .map(([key, label]) => `<button type="button" class="chip${key === active ? ' is-active' : ''}" onclick="app.setRtTodo('${key}')">${label} <span class="chip-count">${counts[key]}</span></button>`)
+                .join('')}</div>`
+            : '';
+        const shown = active === 'all' ? jobs : jobs.filter(j => ui.todoOf(j) === active);
+        if (shown.length === 0) {
+            container.innerHTML = todoChips + ui.empty('ri-checkbox-circle-line', 'All caught up', 'No jobs are waiting on this.');
+            return;
+        }
+
+        container.innerHTML = todoChips + shown.map(job => {
             const isAssigned = job.status === 'assigned';
             const id = ui.esc(job.id);
+            const todo = ui.todoOf(job);
+            const todoPill = todo === 'po' ? ui.pill('PO missing', 'warn', 'ri-file-warning-line')
+                : (todo === 'inv' ? ui.pill('INV to upload', 'info', 'ri-file-upload-line') : '');
 
             return `
                 <article class="job-card">
                     <div class="job-head">
-                        ${isAssigned ? ui.pill('Assigned', 'go', 'ri-check-line') : ui.pill('Open for bids', 'info')}
+                        <span style="display:inline-flex;gap:6px;flex-wrap:wrap">${isAssigned ? ui.pill('Assigned', 'go', 'ri-check-line') : ui.pill('Open for bids', 'info')}${todoPill}</span>
                         <span class="job-time">${ui.posted(job.created_at)}</span>
                     </div>
                     ${ui.customerLine(job)}
@@ -2387,7 +2600,7 @@ const app = {
                         <span style="display:inline-flex;gap:6px;flex-wrap:wrap">${ui.pill('Open', 'go')}${mine.length ? ui.pill('Bid sent', 'info', 'ri-check-line') : ''}</span>
                         <span class="job-time">${ui.posted(job.created_at)}</span>
                     </div>
-                    ${ui.route(job)}
+                    ${ui.route(job, { contacts: false })}
                     ${ui.facts(job, { date: job.delivery_date })}
                     ${ui.photos(job)}
                     ${ui.remarks(job.remarks)}
