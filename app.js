@@ -1313,7 +1313,7 @@ const app = {
                 ${ui.facts(job, { date: job.delivery_date, dateLabel: 'Original date', delivered: !!job.do_url })}
                 ${ui.photos(job, true)}
                 ${ui.remarks(job.remarks)}
-                ${ui.doSlip(job, { showTime: true })}
+                ${ui.doSlip(job, { showTime: true, download: true })}
                 ${ui.poSlip(job, { download: true })}
                 ${ui.invSlip(job, { download: true, upload: job.status === 'assigned' && !!job.do_url })}
                 <div class="job-foot">
@@ -2012,7 +2012,7 @@ const app = {
                     ${ui.facts(job, { date: job.delivery_date })}
                     ${ui.photos(job, true)}
                     ${ui.remarks(job.remarks)}
-                    ${ui.doSlip(job, { showTime: true, timeLabel: 'Delivered' })}
+                    ${ui.doSlip(job, { showTime: true, timeLabel: 'Delivered', download: true })}
                     ${ui.poSlip(job)}
                     ${ui.invSlip(job, { download: true })}
                     <div class="job-foot">
@@ -2225,7 +2225,7 @@ const app = {
                     ${ui.facts(job, { date: finalDate, dateLabel: 'Agreed delivery', delivered: !!job.do_url })}
                     ${ui.photos(job, true)}
                     ${ui.remarks(job.remarks)}
-                    ${ui.doSlip(job, { showTime: true })}
+                    ${ui.doSlip(job, { showTime: true, download: true })}
                     <div class="job-foot">
                         ${ui.price('Your price', bid.proposed_price)}
                     </div>
