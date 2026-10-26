@@ -206,6 +206,16 @@
                         <label class="label" for="job-source-link">Pickup map link (optional)</label>
                         <input type="url" id="job-source-link" placeholder="https://maps.app.goo.gl/..." class="input">
                     </div>
+                    <div class="field-row">
+                        <div class="field">
+                            <label class="label" for="job-source-pic">Pickup person in charge</label>
+                            <input type="text" id="job-source-pic" class="input" maxlength="80" placeholder="e.g. Mr Lim" autocomplete="off" required>
+                        </div>
+                        <div class="field">
+                            <label class="label" for="job-source-phone">Pickup contact number</label>
+                            <input type="tel" id="job-source-phone" class="input" inputmode="tel" minlength="7" maxlength="20" placeholder="012-345 6789" autocomplete="off" required>
+                        </div>
+                    </div>
                     <div class="field">
                         <label class="label" for="job-dest">Drop-off location</label>
                         <input type="text" id="job-dest" placeholder="e.g. Johor Bahru, JHR" class="input" required>
@@ -213,6 +223,16 @@
                     <div class="field">
                         <label class="label" for="job-dest-link">Drop-off map link (optional)</label>
                         <input type="url" id="job-dest-link" placeholder="https://maps.app.goo.gl/..." class="input">
+                    </div>
+                    <div class="field-row">
+                        <div class="field">
+                            <label class="label" for="job-dest-pic">Drop-off person in charge</label>
+                            <input type="text" id="job-dest-pic" class="input" maxlength="80" placeholder="e.g. Mr Lim" autocomplete="off" required>
+                        </div>
+                        <div class="field">
+                            <label class="label" for="job-dest-phone">Drop-off contact number</label>
+                            <input type="tel" id="job-dest-phone" class="input" inputmode="tel" minlength="7" maxlength="20" placeholder="012-345 6789" autocomplete="off" required>
+                        </div>
                     </div>
                     <!-- Extra drop-offs: empty (and invisible) unless the user adds one -->
                     <div id="job-extra-stops" class="stack" style="gap:12px"></div>
@@ -261,6 +281,14 @@
                                 <i class="ri-links-line"></i> Price guide
                             </a>
                         </div>
+                    </div>
+                    <div class="field">
+                        <label class="label" for="job-slot">Preferred time (optional)</label>
+                        <select id="job-slot" class="input">
+                            <option value="">Any time</option>
+                            <option value="Morning">Morning (before 12 pm)</option>
+                            <option value="Afternoon">Afternoon (after 12 pm)</option>
+                        </select>
                     </div>
                 </fieldset>
 
@@ -368,6 +396,16 @@
                             <span>Save this pickup as my primary address</span>
                         </label>
                     </div>
+                    <div class="field-row">
+                        <div class="field">
+                            <label class="label" for="cj-source-pic">Pickup person in charge</label>
+                            <input type="text" id="cj-source-pic" class="input" maxlength="80" placeholder="e.g. Mr Lim" autocomplete="off" required>
+                        </div>
+                        <div class="field">
+                            <label class="label" for="cj-source-phone">Pickup contact number</label>
+                            <input type="tel" id="cj-source-phone" class="input" inputmode="tel" minlength="7" maxlength="20" placeholder="012-345 6789" autocomplete="off" required>
+                        </div>
+                    </div>
                     <div class="field">
                         <label class="label" for="cj-dest">Drop-off location</label>
                         <input type="text" id="cj-dest" placeholder="e.g. Johor Bahru, JHR" class="input" required>
@@ -375,6 +413,16 @@
                     <div class="field">
                         <label class="label" for="cj-dest-link">Drop-off map link (optional)</label>
                         <input type="url" id="cj-dest-link" placeholder="https://maps.app.goo.gl/..." class="input">
+                    </div>
+                    <div class="field-row">
+                        <div class="field">
+                            <label class="label" for="cj-dest-pic">Drop-off person in charge</label>
+                            <input type="text" id="cj-dest-pic" class="input" maxlength="80" placeholder="e.g. Mr Lim" autocomplete="off" required>
+                        </div>
+                        <div class="field">
+                            <label class="label" for="cj-dest-phone">Drop-off contact number</label>
+                            <input type="tel" id="cj-dest-phone" class="input" inputmode="tel" minlength="7" maxlength="20" placeholder="012-345 6789" autocomplete="off" required>
+                        </div>
                     </div>
                     <!-- Extra drop-offs: empty (and invisible) unless the user adds one -->
                     <div id="cj-extra-stops" class="stack" style="gap:12px"></div>
@@ -421,6 +469,14 @@
                             <input type="number" id="cj-price" placeholder="850" class="input" min="1" step="any" inputmode="decimal" required>
                             <span class="hint">What you are willing to pay for this delivery.</span>
                         </div>
+                    </div>
+                    <div class="field">
+                        <label class="label" for="cj-slot">Preferred time (optional)</label>
+                        <select id="cj-slot" class="input">
+                            <option value="">Any time</option>
+                            <option value="Morning">Morning (before 12 pm)</option>
+                            <option value="Afternoon">Afternoon (after 12 pm)</option>
+                        </select>
                     </div>
                 </fieldset>
 
