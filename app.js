@@ -102,6 +102,13 @@ const ui = {
             hour: '2-digit', minute: '2-digit', hour12: true
         }));
     },
+    // "09:00" or "09:00:00" (a database time) -> "9:00 AM". Anything else is shown escaped as is.
+    fmtTime(raw) {
+        const m = /^(\d{1,2}):(\d{2})/.exec(String(raw || ''));
+        if (!m || Number(m[1]) > 23 || Number(m[2]) > 59) return raw ? this.esc(raw) : '';
+        const h = Number(m[1]);
+        return `${h % 12 || 12}:${m[2]} ${h < 12 ? 'AM' : 'PM'}`;
+    },
     posted(iso, label = 'Posted') { return iso ? `${label} ${this.fmtDateTime(iso)}` : ''; },
     money(n) {
         const v = Number(n);
@@ -164,6 +171,7 @@ const ui = {
         const extraDrops = this.stops(job).length;
         if (extraDrops) items.push(`<li class="fact"><i class="ri-route-line"></i>${extraDrops + 1} drop-offs</li>`);
         if (date) items.push(`<li class="fact"><i class="ri-calendar-line"></i>${this.esc(dateLabel)} ${this.fmtDate(date)}</li>`);
+        if (job.pickup_time) items.push(`<li class="fact"><i class="ri-time-line"></i>Pickup ${this.fmtTime(job.pickup_time)}</li>`);
         if (job.unloading_service) items.push(`<li class="fact fact-warn"><i class="ri-hand-coin-line"></i>Unloading required</li>`);
         if (delivered) items.push(`<li class="fact fact-ok"><i class="ri-check-double-line"></i>Delivered</li>`);
         return `<ul class="facts">${items.join('')}</ul>`;
@@ -249,6 +257,9 @@ const app = {
     uploading: 0,
     factory: null,           // customer's saved pickup {loc, link}, or null
     editingHadStops: false,
+    editingHadTime: false,
+    submittingOrder: false,
+    confirmReturnFocus: null,
     MAX_EXTRA_STOPS: 4,      // so a job can have up to 5 drop-offs in total
 
     async init() {
@@ -256,7 +267,11 @@ const app = {
         document.getElementById('register-form').addEventListener('submit', (e) => this.handleRegister(e));
         document.getElementById('post-job-form').addEventListener('submit', (e) => this.submitNewJob(e));
         document.getElementById('job-item').addEventListener('change', () => this.toggleOtherItem());
-        document.getElementById('customer-job-form').addEventListener('submit', (e) => this.submitCustomerJob(e));
+        // Step 1 of ordering: show the summary. Nothing is uploaded or sent until it is confirmed.
+        document.getElementById('customer-job-form').addEventListener('submit', (e) => this.reviewCustomerOrder(e));
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && !document.getElementById('confirm-modal').classList.contains('hidden')) this.closeConfirm();
+        });
         document.getElementById('cj-item').addEventListener('change', () => this.toggleCustomerOtherItem());
 		document.getElementById('forgot-password-form').addEventListener('submit', (e) => this.handleForgotPassword(e));
 		document.getElementById('counter-offer-form').addEventListener('submit', (e) => this.submitCounterOffer(e));
@@ -850,6 +865,8 @@ const app = {
         // Only sent when used, so ordinary single drop-off jobs behave exactly as before
         const extraStops = this.collectStops('job');
         if (extraStops.length) newJob.extra_stops = extraStops;
+        const pickupTime = document.getElementById('job-pickup-time').value;
+        if (pickupTime) newJob.pickup_time = pickupTime;
 
         const { error } = await supabaseClient.from('jobs').insert([newJob]);
         
@@ -1274,6 +1291,7 @@ const app = {
         this.resetStops('cj'); // form.reset() does not remove rows added with "Add another drop-off"
         this.editingJobId = mode === 'edit' ? job.id : null;
         this.editingHadStops = mode === 'edit' && ui.stops(job).length > 0;
+        this.editingHadTime = mode === 'edit' && !!job.pickup_time;
         this.toggleCustomerOtherItem();
         document.getElementById('cj-date').min = new Date().toISOString().split('T')[0];
 
@@ -1305,6 +1323,7 @@ const app = {
         set('cj-dest', job.dest_loc);
         set('cj-dest-link', job.dest_maps_link);
         this.fillStops('cj', ui.stops(job));
+        set('cj-pickup-time', job.pickup_time ? String(job.pickup_time).slice(0, 5) : '');
 
         const sel = document.getElementById('cj-item');
         const known = Array.from(sel.options).map(o => o.value).filter(v => v !== 'Others');
@@ -1348,23 +1367,83 @@ const app = {
         if (isOther) input.focus(); else input.value = '';
     },
 
-    async submitCustomerJob(e) {
-        e.preventDefault();
-
+    // The item chosen in the order form ("Others" becomes "Others: <what they typed>"), or null if it is incomplete
+    customerItemDesc() {
         let itemDesc = document.getElementById('cj-item').value;
         if (itemDesc === 'Others') {
             const other = document.getElementById('cj-item-other').value.trim();
             if (!other) {
                 ui.notify("Please specify the item under Others.");
-                return;
+                return null;
             }
             itemDesc = 'Others: ' + other;
         }
+        return itemDesc;
+    },
 
-        const submitBtn = e.target.querySelector('button[type="submit"]');
-        const originalText = submitBtn.innerText;
-        submitBtn.innerText = 'Uploading & sending...';
-        submitBtn.disabled = true;
+    // Step 1: the form passed the browser's checks. Show a summary; nothing is uploaded or sent yet.
+    reviewCustomerOrder(e) {
+        e.preventDefault();
+        const itemDesc = this.customerItemDesc();
+        if (!itemDesc) return;
+
+        const v = (id) => document.getElementById(id).value.trim();
+        const stops = this.collectStops('cj');
+        const drops = [v('cj-dest'), ...stops.map(s => s.loc)];
+        const photoCount = ['cj-photo-1', 'cj-photo-2']
+            .filter(id => { const f = document.getElementById(id).files; return f && f.length; }).length;
+        const time = v('cj-pickup-time');
+        const remarks = v('cj-remarks');
+        const rows = [];
+        const row = (label, valueHtml, cls = '') =>
+            rows.push(`<div class="confirm-row ${cls}"><dt>${label}</dt><dd>${valueHtml}</dd></div>`);
+
+        row('Pickup', ui.esc(v('cj-source')));
+        row(drops.length > 1 ? 'Drop-offs' : 'Drop-off',
+            drops.map((d, i) => (drops.length > 1 ? `${i + 1}. ` : '') + ui.esc(d)).join('<br>'));
+        row('Load', `${ui.esc(v('cj-qty'))} &times; ${ui.esc(itemDesc.replace(/^Others:\s*/, ''))}`);
+        row('Unloading', document.getElementById('cj-unloading').checked ? 'Required' : 'Not needed');
+        row('Delivery date', ui.fmtDate(v('cj-date')));
+        row('Pickup time', time ? ui.fmtTime(time) : 'Any time');
+        row('Expected price', `RM ${ui.money(parseFloat(v('cj-price')))}`, 'is-price');
+        if (remarks) row('Remarks', ui.esc(remarks));
+        if (photoCount) row('Photos', `${photoCount} attached`);
+        if (document.getElementById('cj-save-factory').checked) row('Factory address', 'Pickup will be saved');
+
+        const editing = !!this.editingJobId;
+        document.getElementById('confirm-body').innerHTML = rows.join('');
+        document.getElementById('cj-confirm-btn').textContent = editing ? 'Confirm changes' : 'Confirm order';
+        this.confirmReturnFocus = document.activeElement;
+        document.getElementById('confirm-modal').classList.remove('hidden');
+        document.getElementById('cj-confirm-btn').focus();
+    },
+
+    closeConfirm() {
+        if (this.submittingOrder) return; // do not let it be dismissed halfway through sending
+        document.getElementById('confirm-modal').classList.add('hidden');
+        if (this.confirmReturnFocus && this.confirmReturnFocus.focus) this.confirmReturnFocus.focus();
+        this.confirmReturnFocus = null;
+    },
+
+    // Step 2: the customer confirmed. Upload the photos and send the order.
+    async submitCustomerJob() {
+        if (this.submittingOrder) return;
+        const itemDesc = this.customerItemDesc();
+        if (!itemDesc) { this.closeConfirm(); return; }
+
+        this.submittingOrder = true;
+        const confirmBtn = document.getElementById('cj-confirm-btn');
+        const backBtn = document.getElementById('confirm-back');
+        const originalText = confirmBtn.textContent;
+        confirmBtn.textContent = 'Uploading & sending...';
+        confirmBtn.disabled = true;
+        backBtn.disabled = true;
+        const restore = () => {
+            confirmBtn.textContent = originalText;
+            confirmBtn.disabled = false;
+            backBtn.disabled = false;
+            this.submittingOrder = false;
+        };
 
         const photo1Url = await this.uploadJobPhoto('cj-photo-1');
         const photo2Url = await this.uploadJobPhoto('cj-photo-2');
@@ -1384,6 +1463,7 @@ const app = {
             p_photo_2_url: photo2Url
         };
         const extraStops = this.collectStops('cj');
+        const pickupTime = document.getElementById('cj-pickup-time').value || null;
         const editing = !!this.editingJobId;
         const editedJobId = this.editingJobId;
         const { data: rpcData, error } = editing
@@ -1391,38 +1471,41 @@ const app = {
             : await supabaseClient.rpc('submit_customer_job', payload);
 
         if (error) {
-            submitBtn.innerText = originalText;
-            submitBtn.disabled = false;
+            restore(); // the summary stays open so they can try again or go back and fix something
             console.error(error);
             ui.notify("Failed to place order: " + error.message);
             return;
         }
 
-        // Extra drop-offs are saved in a second step, so the existing submit/update functions stay untouched.
-        // Skipped entirely for ordinary single drop-off jobs. (For an edited job that used to have extra
-        // drop-offs, an empty list is sent so they get cleared.)
-        let stopsFailed = false;
+        // Extra drop-offs and pickup time are saved in a second step, so the existing submit/update functions
+        // stay untouched. Each is skipped entirely when not used. (For an edited order that used to have them,
+        // an empty value is sent so they get cleared.)
+        const jobId = editing ? editedJobId : this.extractJobId(rpcData); // null = "my newest request"
+        const failed = [];
         if (extraStops.length || this.editingHadStops) {
-            const jobId = editing ? editedJobId : this.extractJobId(rpcData); // null = "my newest request"
             const { error: stopsError } = await supabaseClient.rpc('set_my_job_stops', { p_stops: extraStops, p_job_id: jobId });
-            if (stopsError) {
-                stopsFailed = true;
-                console.error(stopsError);
-                ui.notify("Your order was placed, but the extra drop-offs could not be saved: " + stopsError.message + ". Please tap Edit on the order and add them again.");
-            }
+            if (stopsError) { console.error(stopsError); failed.push('the extra drop-offs'); }
+        }
+        if (pickupTime || this.editingHadTime) {
+            const { error: timeError } = await supabaseClient.rpc('set_my_job_pickup_time', { p_time: pickupTime, p_job_id: jobId });
+            if (timeError) { console.error(timeError); failed.push('the pickup time'); }
         }
 
-        submitBtn.innerText = originalText;
-        submitBtn.disabled = false;
+        restore();
+        document.getElementById('confirm-modal').classList.add('hidden');
+        this.confirmReturnFocus = null;
 
         if (document.getElementById('cj-save-factory').checked) {
             await this.saveFactory(payload.p_source_loc, payload.p_source_maps_link);
         }
-        if (!stopsFailed) {
+        if (failed.length) {
+            ui.notify(`Your order was placed, but ${failed.join(' and ')} could not be saved. Please tap Edit on the order and add ${failed.length > 1 ? 'them' : 'it'} again.`);
+        } else {
             ui.notify(editing ? "Changes saved. We will review your order shortly." : "Order placed. We will review it shortly.");
         }
         this.editingJobId = null;
         this.editingHadStops = false;
+        this.editingHadTime = false;
         this.resetStops('cj');
         document.getElementById('customer-job-form').reset();
         this.toggleCustomerOtherItem();
