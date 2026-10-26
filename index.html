@@ -123,6 +123,27 @@
                 </div>
                 <button onclick="app.showView('rtPostJob')" class="btn btn-primary btn-sm"><i class="ri-add-line"></i> Post job</button>
             </div>
+            <!-- Search and date filter (filters the list already loaded; nothing is sent to the database) -->
+            <div class="filter-bar">
+                <div class="search-box">
+                    <i class="ri-search-line"></i>
+                    <input type="search" id="rt-search" class="input" placeholder="Search customer, location, item..." autocomplete="off" aria-label="Search jobs" oninput="app.applyJobFilter('rt')">
+                </div>
+                <div class="field-row">
+                    <div class="field">
+                        <label class="label" for="rt-from">Delivery from</label>
+                        <input type="date" id="rt-from" class="input" onchange="app.applyJobFilter('rt')">
+                    </div>
+                    <div class="field">
+                        <label class="label" for="rt-to">Delivery to</label>
+                        <input type="date" id="rt-to" class="input" onchange="app.applyJobFilter('rt')">
+                    </div>
+                </div>
+                <div class="filter-meta">
+                    <span class="hint" id="rt-count"></span>
+                    <button type="button" class="link-btn" id="rt-clear" style="font-size:.8125rem;display:none" onclick="app.clearJobFilter('rt')">Clear filters</button>
+                </div>
+            </div>
             <!-- Container for dynamic RT jobs -->
             <div id="rt-jobs-container" class="stack"></div>
         </div>
@@ -141,6 +162,27 @@
             <div>
                 <h2 class="page-title">History</h2>
                 <p class="page-sub">Archived and past jobs.</p>
+            </div>
+            <!-- Search and date filter (filters the list already loaded; nothing is sent to the database) -->
+            <div class="filter-bar">
+                <div class="search-box">
+                    <i class="ri-search-line"></i>
+                    <input type="search" id="hist-search" class="input" placeholder="Search customer, location, item..." autocomplete="off" aria-label="Search jobs" oninput="app.applyJobFilter('hist')">
+                </div>
+                <div class="field-row">
+                    <div class="field">
+                        <label class="label" for="hist-from">Delivery from</label>
+                        <input type="date" id="hist-from" class="input" onchange="app.applyJobFilter('hist')">
+                    </div>
+                    <div class="field">
+                        <label class="label" for="hist-to">Delivery to</label>
+                        <input type="date" id="hist-to" class="input" onchange="app.applyJobFilter('hist')">
+                    </div>
+                </div>
+                <div class="filter-meta">
+                    <span class="hint" id="hist-count"></span>
+                    <button type="button" class="link-btn" id="hist-clear" style="font-size:.8125rem;display:none" onclick="app.clearJobFilter('hist')">Clear filters</button>
+                </div>
             </div>
             <div id="rt-history-container" class="stack"></div>
         </div>
@@ -261,9 +303,39 @@
                     <h2 class="page-title" id="customer-welcome">Welcome</h2>
                     <p class="page-sub">Your orders and delivery status.</p>
                 </div>
-                <button onclick="app.openCustomerNewJob()" class="btn btn-primary btn-sm"><i class="ri-add-line"></i> New order</button>
+                <div style="display:flex;gap:8px;flex-shrink:0">
+                    <button onclick="app.showCustomerHistory()" class="btn btn-secondary btn-sm"><i class="ri-history-line"></i> History</button>
+                    <button onclick="app.openCustomerNewJob()" class="btn btn-primary btn-sm"><i class="ri-add-line"></i> New order</button>
+                </div>
+            </div>
+            <!-- Delivery-date filter (filters the list already loaded; nothing is sent to the database) -->
+            <div class="filter-bar">
+                <div class="field-row">
+                    <div class="field">
+                        <label class="label" for="cust-from">Delivery from</label>
+                        <input type="date" id="cust-from" class="input" onchange="app.applyJobFilter('cust')">
+                    </div>
+                    <div class="field">
+                        <label class="label" for="cust-to">Delivery to</label>
+                        <input type="date" id="cust-to" class="input" onchange="app.applyJobFilter('cust')">
+                    </div>
+                </div>
+                <div class="filter-meta">
+                    <span class="hint" id="cust-count"></span>
+                    <button type="button" class="link-btn" id="cust-clear" style="font-size:.8125rem;display:none" onclick="app.clearJobFilter('cust')">Clear filters</button>
+                </div>
             </div>
             <div id="customer-jobs-container" class="stack"></div>
+        </div>
+
+        <!-- VIEW: CUSTOMER HISTORY (orders we have removed from the active list) -->
+        <div id="view-customer-history" class="view hidden">
+            <div class="back-row">
+                <button onclick="app.showCustomerHome()" class="back-btn" aria-label="Back to my orders"><i class="ri-arrow-left-line"></i></button>
+                <h2 class="page-title">History</h2>
+            </div>
+            <p class="page-sub">Past orders that are no longer in your active list.</p>
+            <div id="customer-history-container" class="stack"></div>
         </div>
 
         <!-- VIEW: CUSTOMER NEW JOB (draft sent to RT for approval) -->
@@ -391,6 +463,23 @@
                 <h2 class="page-title">Open jobs</h2>
                 <p class="page-sub">Accept at the posted price or send a counter-offer.</p>
             </div>
+            <!-- Delivery-date filter (filters the list already loaded; nothing is sent to the database) -->
+            <div class="filter-bar">
+                <div class="field-row">
+                    <div class="field">
+                        <label class="label" for="board-from">Delivery from</label>
+                        <input type="date" id="board-from" class="input" onchange="app.applyJobFilter('board')">
+                    </div>
+                    <div class="field">
+                        <label class="label" for="board-to">Delivery to</label>
+                        <input type="date" id="board-to" class="input" onchange="app.applyJobFilter('board')">
+                    </div>
+                </div>
+                <div class="filter-meta">
+                    <span class="hint" id="board-count"></span>
+                    <button type="button" class="link-btn" id="board-clear" style="font-size:.8125rem;display:none" onclick="app.clearJobFilter('board')">Clear filters</button>
+                </div>
+            </div>
             <!-- Container for dynamic Transporter jobs -->
             <div id="transporter-jobs-container" class="stack"></div>
 
@@ -407,8 +496,34 @@
                 <h2 class="page-title">My assigned jobs</h2>
                 <p class="page-sub">Loads awarded to your company.</p>
             </div>
+            <!-- Delivery-date filter (filters the list already loaded; nothing is sent to the database) -->
+            <div class="filter-bar">
+                <div class="field-row">
+                    <div class="field">
+                        <label class="label" for="mine-from">Delivery from</label>
+                        <input type="date" id="mine-from" class="input" onchange="app.applyJobFilter('mine')">
+                    </div>
+                    <div class="field">
+                        <label class="label" for="mine-to">Delivery to</label>
+                        <input type="date" id="mine-to" class="input" onchange="app.applyJobFilter('mine')">
+                    </div>
+                </div>
+                <div class="filter-meta">
+                    <span class="hint" id="mine-count"></span>
+                    <button type="button" class="link-btn" id="mine-clear" style="font-size:.8125rem;display:none" onclick="app.clearJobFilter('mine')">Clear filters</button>
+                </div>
+            </div>
             <!-- Container for dynamic assigned jobs -->
             <div id="my-jobs-container" class="stack"></div>
+        </div>
+
+        <!-- VIEW: TRANSPORTER HISTORY (assigned jobs that were removed from My jobs) -->
+        <div id="view-transporter-history" class="view hidden">
+            <div>
+                <h2 class="page-title">History</h2>
+                <p class="page-sub">Past jobs that are no longer in your active list.</p>
+            </div>
+            <div id="transporter-history-container" class="stack"></div>
         </div>
 
         <!-- VIEW: COUNTER OFFER -->
@@ -465,6 +580,11 @@
             <li>
                 <button class="tab" data-tab="myjobs" onclick="app.showMyJobs()">
                     <i class="ri-truck-line"></i><span>My jobs</span>
+                </button>
+            </li>
+            <li>
+                <button class="tab" data-tab="myhistory" onclick="app.showTransporterHistory()">
+                    <i class="ri-history-line"></i><span>History</span>
                 </button>
             </li>
         </ul>
