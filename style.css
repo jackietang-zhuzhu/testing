@@ -605,3 +605,15 @@ input[type="file"]::file-selector-button {
 .chip.is-active { background: var(--ink); border-color: var(--ink); color: #fff; }
 .chip.is-active .chip-count { color: #fff; opacity: .8; }
 .step-time { font-size: .625rem; font-weight: 400; color: var(--muted); line-height: 1.2; }
+
+/* ---------- Search & filter bar (Jobs, History) ---------- */
+.filter-bar { display: flex; flex-direction: column; gap: 10px; }
+.search-box { position: relative; }
+.search-box > i {
+    position: absolute; left: 12px; top: 50%;
+    transform: translateY(-50%);
+    color: var(--muted); font-size: 18px;
+    pointer-events: none;
+}
+.search-box .input { padding-left: 38px; }
+.filter-meta { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 18px; }
