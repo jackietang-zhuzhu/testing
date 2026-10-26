@@ -692,8 +692,8 @@ const app = {
             <input type="text" class="input stop-loc" placeholder="e.g. Skudai, JHR" aria-label="Extra drop-off location" maxlength="200" required>
             <input type="url" class="input stop-link" placeholder="Map link (optional)" aria-label="Extra drop-off map link">
             <div class="field-row">
-                <div class="field"><input type="text" class="input stop-pic" placeholder="Person in charge" aria-label="Extra drop-off person in charge" maxlength="80" autocomplete="off" required></div>
-                <div class="field"><input type="tel" class="input stop-phone" placeholder="Contact number" aria-label="Extra drop-off contact number" inputmode="tel" minlength="7" maxlength="20" autocomplete="off" required></div>
+                <div class="field"><input type="text" class="input stop-pic" placeholder="Person in charge (optional)" aria-label="Extra drop-off person in charge" maxlength="80" autocomplete="off"></div>
+                <div class="field"><input type="tel" class="input stop-phone" placeholder="Contact number (optional)" aria-label="Extra drop-off contact number" inputmode="tel" minlength="7" maxlength="20" autocomplete="off"></div>
             </div>`;
         // values are set through the DOM, never pasted into HTML
         row.querySelector('.stop-loc').value = stop.loc || '';
