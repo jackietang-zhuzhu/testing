@@ -617,3 +617,27 @@ input[type="file"]::file-selector-button {
 }
 .search-box .input { padding-left: 38px; }
 .filter-meta { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 18px; }
+
+/* ---------- Person in charge + phone on a route stop ---------- */
+.route-stop.has-contact { flex-wrap: wrap; row-gap: 2px; }
+.route-stop.has-contact::before { top: 12px; }
+.route-contact {
+    flex: 0 0 100%;
+    display: flex; flex-wrap: wrap; gap: 2px 14px;
+    font-size: .8125rem; color: var(--ink-2);
+}
+.route-contact i { color: var(--muted); font-size: 14px; vertical-align: -2px; }
+.route-contact a { color: var(--info); font-weight: 600; text-decoration: none; }
+.route-contact a i { color: var(--info); }
+.route-contact a:hover { text-decoration: underline; }
+
+/* ---------- One DO per drop-off ---------- */
+.do-item { margin-top: 12px; }
+.do-item-head {
+    display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline;
+    gap: 2px 12px;
+    font-size: .8125rem; font-weight: 600; color: var(--ink);
+}
+.do-uploads { display: flex; flex-direction: column; gap: 10px; }
+.do-upload-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.do-upload-label { font-weight: 600; color: var(--ink); overflow-wrap: anywhere; }
