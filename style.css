@@ -641,3 +641,30 @@ input[type="file"]::file-selector-button {
 .do-uploads { display: flex; flex-direction: column; gap: 10px; }
 .do-upload-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .do-upload-label { font-weight: 600; color: var(--ink); overflow-wrap: anywhere; }
+
+/* ---------- Jobs grouped by delivery month ---------- */
+.month-head {
+    display: flex; align-items: center; gap: 8px;
+    margin-top: 6px;
+    font-size: .8125rem; font-weight: 700; color: var(--ink-2);
+    text-transform: uppercase; letter-spacing: .04em;
+}
+.month-head:first-child { margin-top: 0; }
+
+/* ---------- Admin: transporter stats ---------- */
+.tp-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.tp-stat {
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 8px 10px;
+    min-width: 0;
+}
+.tp-stat b { display: block; font-size: 1.15rem; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.tp-stat span { font-size: .6875rem; color: var(--muted); }
+.tp-stat.is-warn { background: var(--road-soft); border-color: #ecd48c; }
+.tp-stat.is-warn b { color: var(--road-ink); }
+.tp-stat.is-stop { background: var(--stop-soft); border-color: #f0c4bf; }
+.tp-stat.is-stop b { color: var(--stop-ink); }
+.tp-stat.is-ok b { color: var(--go-ink); }
+.tp-line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-top: 4px; }
