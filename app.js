@@ -25,6 +25,7 @@ const views = {
     rtReviewDraft: document.getElementById('view-rt-review-draft'),
     rtRequests: document.getElementById('view-rt-requests'),
     rtHistory: document.getElementById('view-rt-history'),
+    rtTransporters: document.getElementById('view-rt-transporters'),
 	counterOffer: document.getElementById('view-counter-offer'),
 	rtReviewBids: document.getElementById('view-rt-review-bids'),
     customerHistory: document.getElementById('view-customer-history'),
@@ -405,6 +406,9 @@ const app = {
     submittingOrder: false,
     confirmReturnFocus: null,
     MAX_EXTRA_STOPS: 4,      // so a job can have up to 5 drop-offs in total
+    rtMonth: '',             // Jobs page: chosen delivery month ('' = all), e.g. '2026-10'
+    tpData: null,            // Transporters tab: loaded bids, transporters and cancellations
+    tpMonth: '',             // Transporters tab: chosen month ('' = not chosen yet, 'all' = all time)
 
     async init() {
         document.getElementById('login-form').addEventListener('submit', (e) => this.handleLogin(e));
@@ -505,6 +509,9 @@ const app = {
         this.knownJobIds = null;
         this.knownStages = null;
         this.currentBidsJobId = null;
+        this.rtMonth = '';
+        this.tpData = null;
+        this.tpMonth = '';
         this.rtJobsList = [];
         this.historyList = [];
         this.boardJobs = [];
@@ -525,6 +532,8 @@ const app = {
         document.getElementById('rt-jobs-container').innerHTML = '';
         document.getElementById('rt-requests-container').innerHTML = '';
         document.getElementById('rt-history-container').innerHTML = '';
+        document.getElementById('rt-transporters-container').innerHTML = '';
+        document.getElementById('rt-months').innerHTML = '';
         this.updateRequestsBadge(0);
         document.getElementById('transporter-jobs-container').innerHTML = '';
         document.getElementById('my-jobs-container').innerHTML = '';
@@ -872,6 +881,8 @@ const app = {
                 this.fetchJobsForRT(true); break;
             case 'rtHistory':
                 this.fetchHistoryForRT(true); break;
+            case 'rtTransporters':
+                this.fetchTransporterStats(true); break;
             case 'rtReviewBids':
                 if (this.currentBidsJobId) this.viewBids(this.currentBidsJobId, true);
                 break;
@@ -964,46 +975,8 @@ const app = {
         this.renderRTHistory(jobs || []);
     },
 
-    // "Clear history" only hides jobs on this device. Nothing is deleted from Supabase.
-    hiddenHistoryIds() {
-        try { return new Set(JSON.parse(localStorage.getItem('rt_hidden_history') || '[]').map(String)); }
-        catch { return new Set(); }
-    },
-
-    clearHistory() {
-        const hidden = this.hiddenHistoryIds();
-        const visible = (this.historyList || []).filter(j => !hidden.has(String(j.id)));
-        const f = this.getJobFilter('hist');
-        // With a search or date range chosen, only the jobs matching it are cleared
-        const targets = this.filterJobs(visible, 'hist');
-        if (!targets.length) { ui.notify('No jobs to clear.'); return; }
-        const n = targets.length;
-        const what = f.active
-            ? `Clear the ${n} job${n === 1 ? '' : 's'} matching your current filter (delivery ${f.from || 'any'} to ${f.to || 'any'}${f.q ? `, search "${f.q}"` : ''})?`
-            : `Clear all ${n} job${n === 1 ? '' : 's'} from History?`;
-        if (!confirm(what + ' They stay in the database, they are only hidden here.')) return;
-        targets.forEach(j => hidden.add(String(j.id)));
-        try { localStorage.setItem('rt_hidden_history', JSON.stringify([...hidden])); }
-        catch { ui.notify('Could not clear history on this browser.'); return; }
-        ui.notify(`${n} job${n === 1 ? '' : 's'} cleared from History.`);
-        this.renderRTHistory(this.historyList || []);
-    },
-
-    renderRTHistory(fetched) {
-        this.historyList = fetched;
-        // forget hidden ids that no longer exist (e.g. cleaned from Supabase) so the list does not grow forever
-        const hiddenIds = this.hiddenHistoryIds();
-        const present = new Set(fetched.map(j => String(j.id)));
-        const kept = [...hiddenIds].filter(id => present.has(id));
-        if (kept.length !== hiddenIds.size) { try { localStorage.setItem('rt_hidden_history', JSON.stringify(kept)); } catch {} }
-        const allJobs = fetched.filter(j => !kept.includes(String(j.id)));
-        const clearBtn = document.getElementById('rt-clear-history');
-        if (clearBtn) {
-            clearBtn.classList.toggle('hidden', allJobs.length === 0);
-            clearBtn.innerHTML = this.getJobFilter('hist').active
-                ? '<i class="ri-eraser-line"></i> Clear shown'
-                : '<i class="ri-eraser-line"></i> Clear history';
-        }
+    renderRTHistory(allJobs) {
+        this.historyList = allJobs;
         const container = document.getElementById('rt-history-container');
         if (allJobs.length === 0) {
             this.updateFilterUi('hist', 0, 0);
@@ -1056,7 +1029,8 @@ const app = {
         const q = val('search').toLowerCase();
         const from = val('from');
         const to = val('to');
-        return { q, from, to, active: !!(q || from || to) };
+        const month = prefix === 'rt' ? (this.rtMonth || '') : '';
+        return { q, from, to, month, active: !!(q || from || to || month) };
     },
 
     // true when the date is inside the chosen from/to range (or no range is chosen)
@@ -1069,12 +1043,14 @@ const app = {
         return true;
     },
 
-    filterJobs(jobs, prefix) {
+    filterJobs(jobs, prefix, opts = {}) {
         const f = this.getJobFilter(prefix);
+        if (opts.ignoreMonth) { f.month = ''; f.active = !!(f.q || f.from || f.to); }
         if (!f.active) return jobs;
         const words = f.q.split(/\s+/).filter(Boolean);
         return jobs.filter(j => {
             if (!this.dateInRange(f, j.delivery_date)) return false;
+            if (f.month && this.monthKey(j.delivery_date) !== f.month) return false;
             if (!words.length) return true;
             const c = j.customers || {};
             const cs = ui.contactsOf(j);
@@ -1105,6 +1081,7 @@ const app = {
     },
 
     clearJobFilter(prefix) {
+        if (prefix === 'rt') this.rtMonth = '';
         ['search', 'from', 'to'].forEach(id => {
             const el = document.getElementById(prefix + '-' + id);
             if (el) el.value = '';
@@ -1636,6 +1613,13 @@ const app = {
 
     async unassignJob(jobId) {
         if (!confirm("Are you sure you want to undo this assignment? The job will be returned to the open market.")) return;
+
+        // Remember who had the job (the bid is reset below) so the Transporters tab can count the cancellation
+        const { data: heldBids } = await supabaseClient
+            .from('bids')
+            .select('transporter_id, proposed_date')
+            .eq('job_id', jobId)
+            .eq('status', 'accepted');
         
         const reset = {
             status: 'open',
@@ -1668,6 +1652,14 @@ const app = {
             .eq('job_id', jobId)
             .eq('status', 'accepted');
         
+        if (heldBids && heldBids.length) {
+            const agreed = heldBids[0].proposed_date || (known && known.delivery_date) || null;
+            const { error: cancelError } = await supabaseClient.from('job_cancellations').insert(
+                heldBids.map(b => ({ job_id: String(jobId), transporter_id: b.transporter_id, delivery_date: agreed }))
+            );
+            if (cancelError) console.warn('Cancellation not recorded (is the job_cancellations table created?):', cancelError.message);
+        }
+
         ui.notify("Job assignment undone. It is now open for bids again.");
         this.fetchJobsForRT();
     },
@@ -2510,8 +2502,44 @@ const app = {
         this.renderRTJobs(this.rtJobsList || []);
     },
 
+    // 'YYYY-MM' of a date string, or '' when there is none
+    monthKey(raw) {
+        const m = /^(\d{4}-\d{2})/.exec(String(raw || ''));
+        return m ? m[1] : '';
+    },
+
+    monthLabel(key, short = false) {
+        const m = /^(\d{4})-(\d{2})$/.exec(String(key || ''));
+        if (!m) return 'No date';
+        return new Date(Number(m[1]), Number(m[2]) - 1, 1)
+            .toLocaleDateString('en-MY', { month: short ? 'short' : 'long', year: 'numeric' });
+    },
+
+    setRtMonth(key) {
+        this.rtMonth = key || '';
+        this.renderRTJobs(this.rtJobsList || []);
+    },
+
+    // Month chips on the Jobs page. Counts follow the search box, so you see how many match in each month.
+    renderRtMonths(allJobs) {
+        const box = document.getElementById('rt-months');
+        if (!box) return;
+        const base = this.filterJobs(allJobs, 'rt', { ignoreMonth: true });
+        const counts = {};
+        base.forEach(j => { const k = this.monthKey(j.delivery_date); if (k) counts[k] = (counts[k] || 0) + 1; });
+        const active = this.rtMonth || '';
+        const keys = Object.keys(counts);
+        if (active && !keys.includes(active)) keys.push(active);
+        keys.sort().reverse();
+        if (!keys.length) { box.innerHTML = ''; return; }
+        const chip = (key, label, n) =>
+            `<button type="button" class="chip${key === active ? ' is-active' : ''}" data-month="${ui.esc(key)}" onclick="app.setRtMonth(this.dataset.month)">${ui.esc(label)} <span class="chip-count">${n}</span></button>`;
+        box.innerHTML = chip('', 'All', base.length) + keys.map(k => chip(k, this.monthLabel(k, true), counts[k] || 0)).join('');
+    },
+
     renderRTJobs(allJobs) {
         this.rtJobsList = allJobs;
+        this.renderRtMonths(allJobs);
         const container = document.getElementById('rt-jobs-container');
         if (allJobs.length === 0) {
             this.updateFilterUi('rt', 0, 0);
@@ -2544,7 +2572,7 @@ const app = {
             return;
         }
 
-        container.innerHTML = todoChips + shown.map(job => {
+        const cardOf = (job) => {
             const isAssigned = job.status === 'assigned';
             const id = ui.esc(job.id);
             const todo = ui.todoOf(job);
@@ -2575,7 +2603,20 @@ const app = {
                     </div>
                 </article>
             `;
-        }).join('');
+        };
+
+        // Group by delivery month, latest month first
+        const byMonth = new Map();
+        shown.forEach(j => {
+            const k = this.monthKey(j.delivery_date);
+            if (!byMonth.has(k)) byMonth.set(k, []);
+            byMonth.get(k).push(j);
+        });
+        const monthKeys = [...byMonth.keys()].sort((x, y) => x === '' ? 1 : (y === '' ? -1 : y.localeCompare(x)));
+        container.innerHTML = todoChips + monthKeys.map(k =>
+            `<h3 class="month-head">${ui.esc(this.monthLabel(k))}<span class="chip-count">${byMonth.get(k).length}</span></h3>` +
+            byMonth.get(k).map(cardOf).join('')
+        ).join('');
     },
 
     renderTransporterJobs(allJobs) {
@@ -2699,6 +2740,248 @@ const app = {
                 </div>
             </div>
         `).join('');
+    },
+
+    // ==========================================
+    // --- ADMIN: TRANSPORTERS TAB ---
+    // Per transporter, for one delivery month: jobs awarded, delivered, on time / late / overdue,
+    // cancellations, how they price (our price vs counter-offers) and where they usually go.
+    // ==========================================
+    showRtTransporters() {
+        ui.setTab('transporters');
+        this.showView('rtTransporters');
+        this.fetchTransporterStats();
+    },
+
+    // Reads every row, 1000 at a time (the API returns at most 1000 per request)
+    async fetchAllRows(build) {
+        const out = [];
+        const size = 1000;
+        for (let from = 0; ; from += size) {
+            const { data, error } = await build().range(from, from + size - 1);
+            if (error) return { data: null, error };
+            out.push(...(data || []));
+            if (!data || data.length < size) break;
+        }
+        return { data: out, error: null };
+    },
+
+    async fetchTransporterStats(silent = false) {
+        const container = document.getElementById('rt-transporters-container');
+        if (!silent) container.innerHTML = ui.skeleton(3, 220);
+
+        const [bidsRes, tpRes, cancelRes] = await Promise.all([
+            this.fetchAllRows(() => supabaseClient.from('bids').select('*, jobs(*)').order('created_at', { ascending: false })),
+            supabaseClient.from('transporters').select('id, company_name, contact_person, phone, banned_until'),
+            supabaseClient.from('job_cancellations').select('job_id, transporter_id, delivery_date, cancelled_at')
+        ]);
+
+        if (bidsRes.error) {
+            console.error(bidsRes.error);
+            if (!silent) container.innerHTML = ui.errorBlock(bidsRes.error.message);
+            return;
+        }
+        if (tpRes.error) console.error('Could not load transporters:', tpRes.error);
+        if (cancelRes.error) console.warn('Cancellations not available:', cancelRes.error.message);
+
+        if (silent && !this.viewIs('rtTransporters')) return;
+        const data = {
+            bids: (bidsRes.data || []).filter(b => b.jobs),
+            transporters: tpRes.data || [],
+            cancels: cancelRes.error ? [] : (cancelRes.data || []),
+            cancelOk: !cancelRes.error
+        };
+        const sig = JSON.stringify(data);
+        if (silent && sig === this.lastSig.transporters) return;
+        this.lastSig.transporters = sig;
+        this.tpData = data;
+        this.renderTransporterStats();
+    },
+
+    setTpMonth(key) {
+        this.tpMonth = key || 'all';
+        this.renderTransporterStats();
+    },
+
+    // Malaysia calendar day (YYYY-MM-DD) of a timestamp
+    myDay(ts) {
+        const d = new Date(ts);
+        if (!ts || isNaN(d)) return '';
+        return d.toLocaleDateString('en-CA', { timeZone: 'Asia/Kuala_Lumpur' });
+    },
+
+    // "Johor Bahru, JHR" -> JHR. Text without a comma is used as it is.
+    regionOf(text) {
+        const t = String(text || '').trim().replace(/\s+/g, ' ');
+        if (!t) return null;
+        const parts = t.split(',');
+        const r = parts[parts.length - 1].trim();
+        if (!r) return null;
+        return { key: r.toLowerCase(), label: /^[A-Za-z]{2,3}$/.test(r) ? r.toUpperCase() : ui.place(r) };
+    },
+
+    renderTransporterStats() {
+        const d = this.tpData;
+        const container = document.getElementById('rt-transporters-container');
+        if (!d || !container) return;
+
+        // Which delivery month a bid belongs to: the date it proposed, otherwise the job's own date
+        const agreedOf = (b) => b.proposed_date || b.jobs.delivery_date || '';
+        const monthOfBid = (b) => this.monthKey(agreedOf(b));
+
+        // Month picker: every month with activity, plus this month
+        const thisMonth = this.myDay(new Date()).slice(0, 7);
+        const monthSet = new Set([thisMonth]);
+        d.bids.forEach(b => { const k = monthOfBid(b); if (k) monthSet.add(k); });
+        d.cancels.forEach(c => { const k = this.monthKey(c.delivery_date); if (k) monthSet.add(k); });
+        const months = [...monthSet].sort().reverse();
+        if (!this.tpMonth) this.tpMonth = thisMonth;
+        const month = (this.tpMonth === 'all' || monthSet.has(this.tpMonth)) ? this.tpMonth : thisMonth;
+        const sel = document.getElementById('tp-month');
+        if (sel) {
+            sel.innerHTML = months.map(k => `<option value="${ui.esc(k)}">${ui.esc(this.monthLabel(k))}</option>`).join('') + '<option value="all">All time</option>';
+            sel.value = month;
+        }
+        const inMonth = (k) => month === 'all' || k === month;
+
+        const today = this.myDay(new Date());
+        const stats = {};
+        const get = (id) => stats[id] || (stats[id] = {
+            bids: 0, quick: 0, counter: 0,
+            awarded: 0, delivered: 0, onTime: 0, late: 0, overdue: 0, inProgress: 0, cancelled: 0,
+            atBudget: 0, viaCounter: 0, diffSum: 0, places: {}
+        });
+
+        d.bids.forEach(b => {
+            if (!inMonth(monthOfBid(b))) return;
+            const j = b.jobs;
+            const s = get(b.transporter_id);
+            const priceSame = Number(b.proposed_price) === Number(j.offered_price);
+            const dateSame = !b.proposed_date || b.proposed_date === j.delivery_date;
+            const quick = priceSame && dateSame;
+            s.bids++;
+            if (quick) s.quick++; else s.counter++;
+
+            if (b.status !== 'accepted') return;
+            s.awarded++;
+            if (quick) s.atBudget++; else s.viaCounter++;
+            s.diffSum += Number(j.accepted_price ?? b.proposed_price) - Number(j.offered_price);
+
+            const agreed = agreedOf(b);
+            if (j.do_url) {
+                s.delivered++;
+                let ts = j.do_uploaded_at;
+                if (!ts) {
+                    const times = ui.parseDos(j).map(x => x.uploaded_at).filter(Boolean).sort();
+                    ts = times[times.length - 1];
+                }
+                const day = this.myDay(ts);
+                if (day && agreed) { if (day <= agreed) s.onTime++; else s.late++; }
+            } else if (j.status === 'assigned') {
+                if (agreed && agreed < today) s.overdue++; else s.inProgress++;
+            }
+
+            // Where they go: pickup and every drop-off, each area counted once per job
+            const seen = new Set();
+            [j.source_loc, j.dest_loc, ...ui.stops(j).map(x => x.loc)].forEach(t => {
+                const r = this.regionOf(t);
+                if (!r || seen.has(r.key)) return;
+                seen.add(r.key);
+                const p = s.places[r.key] || (s.places[r.key] = { label: r.label, n: 0 });
+                p.n++;
+            });
+        });
+
+        d.cancels.forEach(c => {
+            if (inMonth(this.monthKey(c.delivery_date))) get(c.transporter_id).cancelled++;
+        });
+
+        const profiles = new Map(d.transporters.map(t => [String(t.id), t]));
+        const q = (document.getElementById('tp-search')?.value || '').trim().toLowerCase();
+        const rows = Object.keys(stats)
+            .map(id => ({ id, s: stats[id], p: profiles.get(String(id)) || {} }))
+            .filter(r => r.s.bids || r.s.cancelled)
+            .filter(r => !q || [r.p.company_name, r.p.contact_person].filter(Boolean).join(' ').toLowerCase().includes(q))
+            .sort((x, y) => (y.s.awarded - x.s.awarded) || (y.s.bids - x.s.bids) ||
+                String(x.p.company_name || '').localeCompare(String(y.p.company_name || '')));
+
+        const count = document.getElementById('tp-count');
+        if (count) count.textContent = rows.length ? `${rows.length} transporter${rows.length === 1 ? '' : 's'}` : '';
+
+        const note = d.cancelOk ? '' :
+            `<div class="notice notice-warn"><i class="ri-information-line"></i><span>Cancellations are not being recorded yet. The job_cancellations table is missing in Supabase.</span></div>`;
+
+        if (!rows.length) {
+            container.innerHTML = note + ui.empty('ri-truck-line', 'No transporter activity',
+                q ? 'No transporter matches this search.' : 'Nobody bid on jobs for this month.');
+            return;
+        }
+
+        const box = (value, label, tone = '') => `<div class="tp-stat${tone ? ' is-' + tone : ''}"><b>${value}</b><span>${label}</span></div>`;
+        const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+        container.innerHTML = note + rows.map(({ s, p }) => {
+            const tel = String(p.phone || '').replace(/[^\d+]/g, '');
+            const phoneHtml = p.phone
+                ? (tel ? `<a href="tel:${ui.esc(tel)}"><i class="ri-phone-line"></i>${ui.esc(p.phone)}</a>` : `<span><i class="ri-phone-line"></i>${ui.esc(p.phone)}</span>`)
+                : '';
+            const banned = p.banned_until && new Date(p.banned_until).getTime() > Date.now();
+
+            const timed = s.onTime + s.late;
+            const rate = timed ? Math.round(s.onTime / timed * 100) : null;
+            const pills = [];
+            if (banned) pills.push(ui.pill('Suspended', 'stop', 'ri-lock-line'));
+            if (rate !== null) pills.push(ui.pill(`${rate}% on time`, rate >= 90 ? 'go' : (rate >= 70 ? 'warn' : 'stop')));
+            if (s.bids >= 3 && s.counter / s.bids >= 0.6) pills.push(ui.pill('Mostly counter-offers', 'warn'));
+            else if (s.bids >= 3 && s.quick / s.bids >= 0.8) pills.push(ui.pill('Usually accepts our price', 'go'));
+
+            const avg = s.awarded ? s.diffSum / s.awarded : 0;
+            const avgPill = !s.awarded ? ''
+                : Math.abs(avg) < 0.005 ? ui.pill('Paid at budget', 'neutral')
+                : avg > 0 ? ui.pill(`Avg RM ${ui.money(avg)} above budget`, 'warn')
+                : ui.pill(`Avg RM ${ui.money(Math.abs(avg))} below budget`, 'go');
+
+            const places = Object.values(s.places).sort((x, y) => y.n - x.n || x.label.localeCompare(y.label)).slice(0, 4);
+            const placesHtml = places.length
+                ? places.map(x => `${ui.esc(x.label)} <span class="hint">&times;${x.n}</span>`).join(' &middot; ')
+                : '<span class="hint">No awarded jobs yet</span>';
+
+            return `
+                <article class="job-card">
+                    <div class="bid-top">
+                        <div>
+                            <h3 class="bid-company">${ui.esc(p.company_name || 'Unknown transporter')}</h3>
+                            <div class="bid-contact">
+                                ${p.contact_person ? `<span><i class="ri-user-line"></i>${ui.esc(p.contact_person)}</span>` : ''}
+                                ${phoneHtml}
+                            </div>
+                        </div>
+                        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">${pills.join('')}</div>
+                    </div>
+                    <div class="tp-stats">
+                        ${box(s.awarded, 'Awarded')}
+                        ${box(s.delivered, 'Delivered', s.delivered ? 'ok' : '')}
+                        ${box(s.inProgress, 'In progress')}
+                        ${d.cancelOk ? box(s.cancelled, 'Cancelled', s.cancelled ? 'stop' : '') : box('&ndash;', 'Cancelled')}
+                        ${box(s.onTime, 'On time', s.onTime ? 'ok' : '')}
+                        ${box(s.late, 'Late', s.late ? 'warn' : '')}
+                        ${box(s.overdue, 'Overdue', s.overdue ? 'stop' : '')}
+                        ${box(rate === null ? '&ndash;' : rate + '%', 'On-time rate')}
+                    </div>
+                    <div class="remarks">
+                        <b>Pricing</b>
+                        <div class="tp-line">
+                            <span>${plural(s.bids, 'bid')}: ${s.quick} at our price, ${s.counter} counter-offer${s.counter === 1 ? '' : 's'}</span>
+                        </div>
+                        ${s.awarded ? `<div class="tp-line"><span>Awarded: ${s.atBudget} at our price, ${s.viaCounter} after counter-offer</span>${avgPill}</div>` : ''}
+                    </div>
+                    <div class="remarks">
+                        <b>Common areas</b>
+                        <div class="tp-line">${placesHtml}</div>
+                    </div>
+                </article>
+            `;
+        }).join('');
     },
 
     // ==========================================
