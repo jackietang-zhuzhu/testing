@@ -136,6 +136,15 @@
             <div id="rt-requests-container" class="stack"></div>
         </div>
 
+        <!-- VIEW: RT HISTORY (archived jobs) -->
+        <div id="view-rt-history" class="view hidden">
+            <div>
+                <h2 class="page-title">History</h2>
+                <p class="page-sub">Archived and past jobs.</p>
+            </div>
+            <div id="rt-history-container" class="stack"></div>
+        </div>
+
         <!-- VIEW: RT POST JOB -->
         <div id="view-rt-post-job" class="view hidden">
             <div class="back-row">
@@ -435,6 +444,11 @@
             <li>
                 <button class="tab" data-tab="requests" onclick="app.showRtRequests()">
                     <span class="tab-icon"><i class="ri-inbox-line"></i><span id="requests-badge" class="tab-badge hidden">0</span></span><span>Requests</span>
+                </button>
+            </li>
+            <li>
+                <button class="tab" data-tab="history" onclick="app.showRtHistory()">
+                    <i class="ri-history-line"></i><span>History</span>
                 </button>
             </li>
         </ul>
