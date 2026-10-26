@@ -102,13 +102,6 @@ const ui = {
             hour: '2-digit', minute: '2-digit', hour12: true
         }));
     },
-    // "09:00" or "09:00:00" (a database time) -> "9:00 AM". Anything else is shown escaped as is.
-    fmtTime(raw) {
-        const m = /^(\d{1,2}):(\d{2})/.exec(String(raw || ''));
-        if (!m || Number(m[1]) > 23 || Number(m[2]) > 59) return raw ? this.esc(raw) : '';
-        const h = Number(m[1]);
-        return `${h % 12 || 12}:${m[2]} ${h < 12 ? 'AM' : 'PM'}`;
-    },
     posted(iso, label = 'Posted') { return iso ? `${label} ${this.fmtDateTime(iso)}` : ''; },
     money(n) {
         const v = Number(n);
@@ -171,7 +164,6 @@ const ui = {
         const extraDrops = this.stops(job).length;
         if (extraDrops) items.push(`<li class="fact"><i class="ri-route-line"></i>${extraDrops + 1} drop-offs</li>`);
         if (date) items.push(`<li class="fact"><i class="ri-calendar-line"></i>${this.esc(dateLabel)} ${this.fmtDate(date)}</li>`);
-        if (job.pickup_time) items.push(`<li class="fact"><i class="ri-time-line"></i>Pickup ${this.fmtTime(job.pickup_time)}</li>`);
         if (job.unloading_service) items.push(`<li class="fact fact-warn"><i class="ri-hand-coin-line"></i>Unloading required</li>`);
         if (delivered) items.push(`<li class="fact fact-ok"><i class="ri-check-double-line"></i>Delivered</li>`);
         return `<ul class="facts">${items.join('')}</ul>`;
@@ -257,7 +249,6 @@ const app = {
     uploading: 0,
     factory: null,           // customer's saved pickup {loc, link}, or null
     editingHadStops: false,
-    editingHadTime: false,
     submittingOrder: false,
     confirmReturnFocus: null,
     MAX_EXTRA_STOPS: 4,      // so a job can have up to 5 drop-offs in total
@@ -865,8 +856,6 @@ const app = {
         // Only sent when used, so ordinary single drop-off jobs behave exactly as before
         const extraStops = this.collectStops('job');
         if (extraStops.length) newJob.extra_stops = extraStops;
-        const pickupTime = document.getElementById('job-pickup-time').value;
-        if (pickupTime) newJob.pickup_time = pickupTime;
 
         const { error } = await supabaseClient.from('jobs').insert([newJob]);
         
@@ -1291,7 +1280,6 @@ const app = {
         this.resetStops('cj'); // form.reset() does not remove rows added with "Add another drop-off"
         this.editingJobId = mode === 'edit' ? job.id : null;
         this.editingHadStops = mode === 'edit' && ui.stops(job).length > 0;
-        this.editingHadTime = mode === 'edit' && !!job.pickup_time;
         this.toggleCustomerOtherItem();
         document.getElementById('cj-date').min = new Date().toISOString().split('T')[0];
 
@@ -1323,7 +1311,6 @@ const app = {
         set('cj-dest', job.dest_loc);
         set('cj-dest-link', job.dest_maps_link);
         this.fillStops('cj', ui.stops(job));
-        set('cj-pickup-time', job.pickup_time ? String(job.pickup_time).slice(0, 5) : '');
 
         const sel = document.getElementById('cj-item');
         const known = Array.from(sel.options).map(o => o.value).filter(v => v !== 'Others');
@@ -1392,7 +1379,6 @@ const app = {
         const drops = [v('cj-dest'), ...stops.map(s => s.loc)];
         const photoCount = ['cj-photo-1', 'cj-photo-2']
             .filter(id => { const f = document.getElementById(id).files; return f && f.length; }).length;
-        const time = v('cj-pickup-time');
         const remarks = v('cj-remarks');
         const rows = [];
         const row = (label, valueHtml, cls = '') =>
@@ -1404,7 +1390,6 @@ const app = {
         row('Load', `${ui.esc(v('cj-qty'))} &times; ${ui.esc(itemDesc.replace(/^Others:\s*/, ''))}`);
         row('Unloading', document.getElementById('cj-unloading').checked ? 'Required' : 'Not needed');
         row('Delivery date', ui.fmtDate(v('cj-date')));
-        row('Pickup time', time ? ui.fmtTime(time) : 'Any time');
         row('Expected price', `RM ${ui.money(parseFloat(v('cj-price')))}`, 'is-price');
         if (remarks) row('Remarks', ui.esc(remarks));
         if (photoCount) row('Photos', `${photoCount} attached`);
@@ -1463,7 +1448,6 @@ const app = {
             p_photo_2_url: photo2Url
         };
         const extraStops = this.collectStops('cj');
-        const pickupTime = document.getElementById('cj-pickup-time').value || null;
         const editing = !!this.editingJobId;
         const editedJobId = this.editingJobId;
         const { data: rpcData, error } = editing
@@ -1477,18 +1461,14 @@ const app = {
             return;
         }
 
-        // Extra drop-offs and pickup time are saved in a second step, so the existing submit/update functions
-        // stay untouched. Each is skipped entirely when not used. (For an edited order that used to have them,
-        // an empty value is sent so they get cleared.)
+        // Extra drop-offs are saved in a second step, so the existing submit/update functions stay untouched.
+        // It is skipped entirely when not used. (For an edited order that used to have them,
+        // an empty list is sent so they get cleared.)
         const jobId = editing ? editedJobId : this.extractJobId(rpcData); // null = "my newest request"
         const failed = [];
         if (extraStops.length || this.editingHadStops) {
             const { error: stopsError } = await supabaseClient.rpc('set_my_job_stops', { p_stops: extraStops, p_job_id: jobId });
             if (stopsError) { console.error(stopsError); failed.push('the extra drop-offs'); }
-        }
-        if (pickupTime || this.editingHadTime) {
-            const { error: timeError } = await supabaseClient.rpc('set_my_job_pickup_time', { p_time: pickupTime, p_job_id: jobId });
-            if (timeError) { console.error(timeError); failed.push('the pickup time'); }
         }
 
         restore();
@@ -1505,7 +1485,6 @@ const app = {
         }
         this.editingJobId = null;
         this.editingHadStops = false;
-        this.editingHadTime = false;
         this.resetStops('cj');
         document.getElementById('customer-job-form').reset();
         this.toggleCustomerOtherItem();
