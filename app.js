@@ -211,44 +211,55 @@ const ui = {
             <div class="photo-strip is-small" style="align-items:center;gap:12px;margin-top:8px">${thumb}${dl}</div>
         </div>`;
     },
-    // Customer PO: the customer's own purchase order, used by us to issue the invoice. It lives in its own
-    // table (job_customer_po), not on the job, so transporters never receive it.
-    // job.customer_po = { url, uploaded_at } when one has been uploaded.
-    poSlip(job, { title = 'Customer PO', download = false, upload = false } = {}) {
-        const po = job && job.customer_po;
-        const url = po ? app.safeUrl(po.url) : '';
+    // A document attached to a job but stored apart from it, so transporters never receive it:
+    //   job.customer_po   = { url, uploaded_at }  the customer's own PO (uploaded after delivery)
+    //   job.invoice_file  = { url, uploaded_at }  our invoice (INV), uploaded by the admin, downloadable by the customer
+    docSlip(doc, job, { title, noun, handler, dlName, emptyText = '', download = false, upload = false } = {}) {
+        const url = doc ? app.safeUrl(doc.url) : '';
         if (!url && !upload) return '';
         const uploadBtn = upload
             ? `<label class="btn ${url ? 'btn-secondary' : 'btn-primary'} btn-sm" style="cursor:pointer">
-                    <i class="ri-upload-2-line"></i> ${url ? 'Replace PO' : 'Upload PO'}
-                    <input type="file" accept="image/*,application/pdf" hidden data-job-id="${this.esc(job.id)}" ${url ? `onclick="if(!confirm('This will replace the PO you already uploaded. Continue?')) event.preventDefault()"` : ''} onchange="app.uploadCustomerPO(this)">
+                    <i class="ri-upload-2-line"></i> ${url ? 'Replace' : 'Upload'} ${this.esc(noun)}
+                    <input type="file" accept="image/*,application/pdf" hidden data-job-id="${this.esc(job.id)}" ${url ? `onclick="if(!confirm('This will replace the ${this.esc(noun)} already uploaded. Continue?')) event.preventDefault()"` : ''} onchange="app.${handler}(this)">
                 </label>`
             : '';
         if (!url) {
             return `<div class="remarks do-block">
                 <b>${this.esc(title)}</b>
-                <p style="margin:4px 0 8px;font-size:.8125rem;color:var(--muted)">Upload your PO so we can prepare your invoice.</p>
+                ${emptyText ? `<p style="margin:4px 0 8px;font-size:.8125rem;color:var(--muted)">${this.esc(emptyText)}</p>` : ''}
                 ${uploadBtn}
             </div>`;
         }
-        const when = po.uploaded_at
-            ? `<span style="font-weight:400;font-size:.75rem;color:var(--muted)">Uploaded ${this.fmtDateTime(po.uploaded_at)}</span>`
+        const when = doc.uploaded_at
+            ? `<span style="font-weight:400;font-size:.75rem;color:var(--muted)">Uploaded ${this.fmtDateTime(doc.uploaded_at)}</span>`
             : '';
         const safe = this.esc(url);
         const thumb = this.isPdf(url)
-            ? `<a class="photo-thumb is-file" href="${safe}" target="_blank" rel="noopener noreferrer" title="Open PO (PDF)">
+            ? `<a class="photo-thumb is-file" href="${safe}" target="_blank" rel="noopener noreferrer" title="Open ${this.esc(noun)} (PDF)">
                     <i class="ri-file-pdf-2-line"></i><span>PDF</span>
                 </a>`
             : `<a class="photo-thumb" href="${safe}" target="_blank" rel="noopener noreferrer">
-                    <img src="${safe}" alt="Customer PO" loading="lazy">
+                    <img src="${safe}" alt="${this.esc(title)}" loading="lazy">
                 </a>`;
         const dl = download
-            ? `<a class="btn btn-secondary btn-sm" href="${this.esc(this.downloadUrl(url, 'Customer-PO'))}" download><i class="ri-download-2-line"></i> Download</a>`
+            ? `<a class="btn btn-secondary btn-sm" href="${this.esc(this.downloadUrl(url, dlName))}" download><i class="ri-download-2-line"></i> Download</a>`
             : '';
         return `<div class="remarks do-block">
             <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:4px 12px"><b>${this.esc(title)}</b>${when}</div>
             <div class="photo-strip is-small" style="align-items:center;gap:12px;margin-top:8px">${thumb}${dl}${uploadBtn}</div>
         </div>`;
+    },
+    poSlip(job, opts = {}) {
+        return this.docSlip(job && job.customer_po, job, {
+            title: 'Customer PO', noun: 'PO', handler: 'uploadCustomerPO', dlName: 'Customer-PO',
+            emptyText: 'Upload your PO so we can prepare your invoice.', ...opts
+        });
+    },
+    invSlip(job, opts = {}) {
+        return this.docSlip(job && job.invoice_file, job, {
+            title: 'Invoice (INV)', noun: 'INV', handler: 'uploadInvoice', dlName: 'Invoice',
+            emptyText: 'Upload the invoice once it is ready. The customer will see it on their order.', ...opts
+        });
     },
     remarks(text) {
         return text ? `<p class="remarks"><b>Remarks:</b> ${this.esc(text)}</p>` : '';
@@ -729,7 +740,7 @@ const app = {
             .order('created_at', { ascending: false });
             
         if (error) { console.error(error); if (!silent) rtJobsContainer.innerHTML = ui.errorBlock('Check your connection and try again.'); return; }
-        await this.attachPoFiles(jobs);
+        await this.attachJobDocs(jobs);
         if (silent && !this.viewIs('rtHome', 'rtRequests')) return;
         const all = jobs || [];
         const requests = all.filter(j => j.status === 'pending_review');
@@ -1088,7 +1099,7 @@ const app = {
             if (!silent) container.innerHTML = ui.errorBlock(jobError.message);
             return;
         }
-        await this.attachPoFiles([job]);
+        await this.attachJobDocs([job]);
 
         const { data: bids, error } = await supabaseClient
             .from('bids')
@@ -1120,6 +1131,7 @@ const app = {
                 ${ui.remarks(job.remarks)}
                 ${ui.doSlip(job, { showTime: true })}
                 ${ui.poSlip(job, { download: true })}
+                ${ui.invSlip(job, { download: true, upload: job.status === 'assigned' && !!job.do_url })}
                 <div class="job-foot">
                     ${ui.price('Original budget', originalPrice)}
                 </div>
@@ -1535,25 +1547,27 @@ const app = {
     },
 
     // submit_customer_job may return the new job's id (as text, or inside a row), or nothing at all
-    // ---- Customer PO: uploaded by the customer once the job is delivered; we then issue the invoice from it ----
-    checkPoFile(file) {
+    // ---- Customer PO and our invoice (INV) ----
+    // Both are files kept apart from the job (tables job_customer_po and job_invoice) so transporters never get them.
+    // The customer uploads the PO once the job is delivered; we then upload the INV, which the customer can download.
+    checkDocFile(file, noun) {
         const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
-        if (!file.type.startsWith('image/') && !isPdf) return 'Please upload your PO as an image (PNG or JPG) or a PDF.';
-        if (file.size > 10 * 1024 * 1024) return 'The PO file is too large. Maximum size is 10 MB.';
+        if (!file.type.startsWith('image/') && !isPdf) return `Please upload the ${noun} as an image (PNG or JPG) or a PDF.`;
+        if (file.size > 10 * 1024 * 1024) return `The ${noun} file is too large. Maximum size is 10 MB.`;
         return '';
     },
 
-    // Uploads to storage and returns the public link, or null (the customer is told why).
-    async uploadPoFile(file) {
-        const err = this.checkPoFile(file);
+    // Uploads to storage and returns the public link, or null (the person is told why).
+    async uploadDocFile(file, prefix, noun) {
+        const err = this.checkDocFile(file, noun);
         if (err) { ui.notify(err); return null; }
         const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
         const ext = (isPdf ? 'pdf' : (file.name.split('.').pop() || 'jpg')).toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
-        const filePath = `public/po-${Date.now()}-${Math.random().toString(36).substring(2)}.${ext}`;
+        const filePath = `public/${prefix}-${Date.now()}-${Math.random().toString(36).substring(2)}.${ext}`;
         const { error } = await supabaseClient.storage.from('job-photos').upload(filePath, file);
         if (error) {
-            console.error('PO upload error:', error);
-            ui.notify('Failed to upload PO: ' + error.message);
+            console.error(noun + ' upload error:', error);
+            ui.notify(`Failed to upload ${noun}: ` + error.message);
             return null;
         }
         return supabaseClient.storage.from('job-photos').getPublicUrl(filePath).data.publicUrl;
@@ -1565,36 +1579,72 @@ const app = {
         return true;
     },
 
-    // Upload / Replace button on a customer's order card
+    // Customer: Upload / Replace PO button on a delivered order
     async uploadCustomerPO(input) {
         const file = input.files && input.files[0];
         const jobId = input.dataset.jobId;
         if (!file || !jobId) return;
         this.uploading = Date.now(); // pauses the auto-refresh while uploading
         ui.notify('Uploading PO...');
-        const url = await this.uploadPoFile(file);
+        const url = await this.uploadDocFile(file, 'po', 'PO');
         const saved = url ? await this.saveCustomerPo(jobId, url) : false;
         this.uploading = 0;
         input.value = '';
-        if (url && !saved) { ui.notify('PO uploaded but could not be saved to the order. Please try again.'); return; }
+        if (url && !saved) { ui.notify('Could not save the PO to the order. Please try again.'); return; }
         if (!saved) return;
         ui.notify('PO uploaded.');
         this.fetchCustomerJobs();
     },
 
-    // Adds job.customer_po = { url, uploaded_at } (or null) to each job. The PO is an extra: if it cannot be
-    // loaded the jobs still show. Row-level security decides what comes back: a customer only gets their own
-    // POs, the admin gets all, transporters get none.
-    async attachPoFiles(jobs) {
+    // Admin: Upload / Replace INV button on a delivered job
+    async uploadInvoice(input) {
+        const file = input.files && input.files[0];
+        const jobId = input.dataset.jobId;
+        if (!file || !jobId) return;
+        this.uploading = Date.now();
+        ui.notify('Uploading invoice...');
+        const url = await this.uploadDocFile(file, 'inv', 'INV');
+        let saved = false;
+        if (url) {
+            const { error } = await supabaseClient.rpc('attach_invoice', { p_job_id: jobId, p_url: url });
+            if (error) { console.error('Invoice save error:', error); ui.notify('Could not save the invoice to the job: ' + error.message); }
+            else saved = true;
+        }
+        this.uploading = 0;
+        input.value = '';
+        if (!saved) return;
+        ui.notify('Invoice uploaded.');
+        this.refreshAdminJobViews();
+    },
+
+    // Redraw whichever admin screen the INV was uploaded from
+    refreshAdminJobViews() {
+        if (this.viewIs('rtReviewBids') && this.currentBidsJobId) this.viewBids(this.currentBidsJobId);
+        else this.fetchJobsForRT();
+    },
+
+    // Adds job.customer_po and job.invoice_file ({ url, uploaded_at } or null) to each job. These are extras: if
+    // they cannot be loaded the jobs still show. Row-level security decides what comes back: a customer only gets
+    // their own, the admin gets all, transporters get none.
+    async attachJobDocs(jobs) {
         if (!jobs || !jobs.length) return jobs;
-        let query = supabaseClient.from('job_customer_po').select('job_id, file_url, uploaded_at');
-        if (jobs.length === 1) query = query.eq('job_id', jobs[0].id);
-        const { data, error } = await query;
-        if (error) { console.error('PO load error:', error); return jobs; }
-        const byJob = new Map((data || []).map(r => [String(r.job_id), r]));
-        jobs.forEach(j => {
-            const r = byJob.get(String(j.id));
-            j.customer_po = r ? { url: r.file_url, uploaded_at: r.uploaded_at } : null;
+        const one = jobs.length === 1 ? jobs[0].id : null;
+        const load = (table) => {
+            let q = supabaseClient.from(table).select('job_id, file_url, uploaded_at');
+            if (one != null) q = q.eq('job_id', one);
+            return q;
+        };
+        const [po, inv] = await Promise.all([load('job_customer_po'), load('job_invoice')]);
+        const index = (res, label) => {
+            if (res.error) { console.error(label + ' load error:', res.error); return new Map(); }
+            return new Map((res.data || []).map(r => [String(r.job_id), r]));
+        };
+        const poBy = index(po, 'PO');
+        const invBy = index(inv, 'Invoice');
+        const pack = (r) => r ? { url: r.file_url, uploaded_at: r.uploaded_at } : null;
+        jobs.forEach(x => {
+            x.customer_po = pack(poBy.get(String(x.id)));
+            x.invoice_file = pack(invBy.get(String(x.id)));
         });
         return jobs;
     },
@@ -1621,7 +1671,7 @@ const app = {
             if (!silent) container.innerHTML = ui.errorBlock(error.message);
             return;
         }
-        await this.attachPoFiles(jobs);
+        await this.attachJobDocs(jobs);
         if (silent && !this.viewIs('customerHome')) return;
         // jobs the admin removed (archived) are not shown to customers
         const visible = (jobs || []).filter(j => j.status !== 'archived');
@@ -1730,6 +1780,7 @@ const app = {
                     ${ui.remarks(job.remarks)}
                     ${ui.doSlip(job, { showTime: true, timeLabel: 'Delivered' })}
                     ${ui.poSlip(job, { title: 'Your PO', upload: stage === 'delivered' })}
+                    ${ui.invSlip(job, { download: true })}
                     ${foot}
                 </article>
             `;
@@ -1762,7 +1813,7 @@ const app = {
             return;
         }
 
-        await this.attachPoFiles([job]);
+        await this.attachJobDocs([job]);
         const c = job.customers || {};
         const wa = ui.waLink(c.phone);
         const expected = Number(job.customer_expected_price) || 0;
@@ -1979,6 +2030,7 @@ const app = {
                     ${ui.route(job)}
                     ${ui.facts(job, { po: true, date: job.delivery_date, delivered: isAssigned && !!job.do_url })}
                     ${ui.poSlip(job, { download: true })}
+                    ${ui.invSlip(job, { download: true, upload: isAssigned && !!job.do_url })}
                     <div class="job-foot">
                         ${ui.price('Budget', job.offered_price)}
                         <div class="actions">
