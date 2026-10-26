@@ -159,9 +159,12 @@
 
         <!-- VIEW: RT HISTORY (archived jobs) -->
         <div id="view-rt-history" class="view hidden">
-            <div>
-                <h2 class="page-title">History</h2>
-                <p class="page-sub">Archived and past jobs.</p>
+            <div class="page-head">
+                <div>
+                    <h2 class="page-title">History</h2>
+                    <p class="page-sub">Archived and past jobs.</p>
+                </div>
+                <button type="button" id="rt-clear-history" class="btn btn-secondary btn-sm hidden" onclick="app.clearHistory()"><i class="ri-eraser-line"></i> Clear history</button>
             </div>
             <!-- Search and date filter (filters the list already loaded; nothing is sent to the database) -->
             <div class="filter-bar">
