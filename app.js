@@ -127,11 +127,6 @@ const ui = {
             return w.toLowerCase().replace(/(^|[(\-\/])([a-z])/g, (m, p, c) => p + c.toUpperCase());
         }).join(' ');
     },
-    poLabel(raw) {
-        const num = String(raw || '').trim().replace(/^PO[\s:\-#]*/i, '').trim();
-        if (!num || /^(n\/?a|na|nil|none|-+)$/i.test(num)) return 'No PO number';
-        return 'PO ' + this.esc(num);
-    },
     // Extra drop-offs saved on a job (jobs.extra_stops, a JSON list of {loc, link}).
     // Returns [] for ordinary single-drop-off jobs, so nothing extra is ever drawn for them.
     stops(job) {
@@ -157,9 +152,8 @@ const ui = {
                 ${dropHtml}
             </ol>`;
     },
-    facts(job, { po = false, date = '', dateLabel = 'Delivery', delivered = false } = {}) {
+    facts(job, { date = '', dateLabel = 'Delivery', delivered = false } = {}) {
         const items = [];
-        if (po) items.push(`<li class="fact"><i class="ri-file-list-3-line"></i>${this.poLabel(job.po_number)}</li>`);
         items.push(`<li class="fact"><i class="ri-box-3-line"></i>${this.esc(job.quantity)} ${this.esc(job.item_desc)}</li>`);
         const extraDrops = this.stops(job).length;
         if (extraDrops) items.push(`<li class="fact"><i class="ri-route-line"></i>${extraDrops + 1} drop-offs</li>`);
@@ -890,7 +884,6 @@ const app = {
         const photo2Url = await this.uploadJobPhoto('job-photo-2');
 
         const newJob = {
-            po_number: document.getElementById('job-po-number').value, 
             source_loc: document.getElementById('job-source').value,
             source_maps_link: document.getElementById('job-source-link').value,
 			dest_loc: document.getElementById('job-dest').value,
@@ -1126,7 +1119,7 @@ const app = {
                     <span class="job-time">${ui.posted(job.created_at)}</span>
                 </div>
                 ${ui.route(job)}
-                ${ui.facts(job, { po: true, date: job.delivery_date, dateLabel: 'Original date', delivered: !!job.do_url })}
+                ${ui.facts(job, { date: job.delivery_date, dateLabel: 'Original date', delivered: !!job.do_url })}
                 ${ui.photos(job, true)}
                 ${ui.remarks(job.remarks)}
                 ${ui.doSlip(job, { showTime: true })}
@@ -1834,10 +1827,6 @@ const app = {
             </article>
 
             <form id="approve-draft-form" class="panel form-stack" style="gap:16px">
-                <div class="field">
-                    <label class="label" for="draft-po">PO number (internal)</label>
-                    <input type="text" id="draft-po" class="input" placeholder="e.g. PO-45992" required>
-                </div>
                 <span class="hint">This job will be posted to transporters at RM ${ui.money(expected)}, the price the customer entered.</span>
                 <button type="submit" class="btn btn-go btn-block">Approve &amp; post job</button>
             </form>
@@ -1849,11 +1838,6 @@ const app = {
 
     async approveDraft(e, jobId, price) {
         e.preventDefault();
-        const po = document.getElementById('draft-po').value.trim();
-        if (!po) {
-            ui.notify("Please fill in the PO number.");
-            return;
-        }
         if (!Number.isFinite(price) || price <= 0) {
             ui.notify("This draft has no valid price. Please contact the customer.");
             return;
@@ -1863,7 +1847,6 @@ const app = {
         const { data: updated, error } = await supabaseClient
             .from('jobs')
             .update({
-                po_number: po,
                 offered_price: price,
                 status: 'open',
                 approved_at: new Date().toISOString()
@@ -2022,7 +2005,7 @@ const app = {
                         <span class="job-time">${ui.posted(job.created_at)}</span>
                     </div>
                     ${ui.route(job)}
-                    ${ui.facts(job, { po: true, date: job.delivery_date, delivered: isAssigned && !!job.do_url })}
+                    ${ui.facts(job, { date: job.delivery_date, delivered: isAssigned && !!job.do_url })}
                     ${ui.poSlip(job, { download: true })}
                     ${ui.invSlip(job, { download: true, upload: isAssigned && !!job.do_url })}
                     <div class="job-foot">
