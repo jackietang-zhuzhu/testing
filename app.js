@@ -24,6 +24,7 @@ const views = {
     customerNewJob: document.getElementById('view-customer-new-job'),
     rtReviewDraft: document.getElementById('view-rt-review-draft'),
     rtRequests: document.getElementById('view-rt-requests'),
+    rtHistory: document.getElementById('view-rt-history'),
 	counterOffer: document.getElementById('view-counter-offer'),
 	rtReviewBids: document.getElementById('view-rt-review-bids'),
 };
@@ -72,7 +73,7 @@ const ui = {
         let tone = 'info';
         if (/already/i.test(m)) tone = 'info';
         else if (/error|failed|invalid|cannot|could not|too large|suspended|blocked/i.test(m)) tone = 'error';
-        else if (/success|sent|posted|placed|published|awarded|accepted|submitted|removed|undone|uploaded|uploading|cancelled|updated/i.test(m)) tone = 'success';
+        else if (/success|sent|posted|placed|published|awarded|accepted|submitted|removed|undone|uploaded|uploading|cancelled|updated|restored/i.test(m)) tone = 'success';
         this.toast(m, tone);
     },
 
@@ -406,6 +407,7 @@ const app = {
         // Wipe DOM containers
         document.getElementById('rt-jobs-container').innerHTML = '';
         document.getElementById('rt-requests-container').innerHTML = '';
+        document.getElementById('rt-history-container').innerHTML = '';
         this.updateRequestsBadge(0);
         document.getElementById('transporter-jobs-container').innerHTML = '';
         document.getElementById('my-jobs-container').innerHTML = '';
@@ -710,6 +712,8 @@ const app = {
             case 'rtHome':
             case 'rtRequests':
                 this.fetchJobsForRT(true); break;
+            case 'rtHistory':
+                this.fetchHistoryForRT(true); break;
             case 'rtReviewBids':
                 if (this.currentBidsJobId) this.viewBids(this.currentBidsJobId, true);
                 break;
@@ -727,7 +731,7 @@ const app = {
     async fetchJobsForRT(silent = false) {
         if (!silent) rtJobsContainer.innerHTML = ui.skeleton(3);
         
- const { data: jobs, error } = await supabaseClient
+        const { data: jobs, error } = await supabaseClient
             .from('jobs')
             .select('*, customers(company_name, contact_person, phone)')
             .neq('status', 'archived') 
@@ -766,6 +770,93 @@ const app = {
         ui.setTab('requests');
         this.showView('rtRequests');
         this.fetchJobsForRT();
+    },
+
+    showRtHistory() {
+        ui.setTab('history');
+        this.showView('rtHistory');
+        this.fetchHistoryForRT();
+    },
+
+    async fetchHistoryForRT(silent = false) {
+        const container = document.getElementById('rt-history-container');
+        if (!silent) container.innerHTML = ui.skeleton(3);
+
+        const { data: jobs, error } = await supabaseClient
+            .from('jobs')
+            .select('*, customers(company_name, contact_person, phone)')
+            .eq('status', 'archived')
+            .order('created_at', { ascending: false });
+
+        if (error) {
+            console.error(error);
+            if (!silent) container.innerHTML = ui.errorBlock('Check your connection and try again.');
+            return;
+        }
+
+        await this.attachJobDocs(jobs);
+
+        if (silent && !this.viewIs('rtHistory')) return;
+        const sig = JSON.stringify(jobs);
+        if (silent && sig === this.lastSig.history) return;
+        this.lastSig.history = sig;
+
+        this.renderRTHistory(jobs || []);
+    },
+
+    renderRTHistory(jobs) {
+        const container = document.getElementById('rt-history-container');
+        if (jobs.length === 0) {
+            container.innerHTML = ui.empty('ri-history-line', 'No history yet', 'Jobs you remove from the active list will appear here.');
+            return;
+        }
+
+        container.innerHTML = jobs.map(job => {
+            const id = ui.esc(job.id);
+            const isAssigned = !!job.assigned_at;
+            const priceLabel = isAssigned ? 'Accepted price' : (job.offered_price ? 'Budget' : 'Expected price');
+            const price = job.accepted_price ?? job.offered_price ?? job.customer_expected_price;
+            
+            return `
+                <article class="job-card is-dim">
+                    <div class="job-head">
+                        ${ui.pill('Archived', 'neutral', 'ri-archive-line')}
+                        <span class="job-time">${ui.posted(job.created_at)}</span>
+                    </div>
+                    ${ui.route(job)}
+                    ${ui.facts(job, { date: job.delivery_date, delivered: !!job.do_url })}
+                    ${ui.doSlip(job, { download: true })}
+                    ${ui.poSlip(job, { download: true })}
+                    ${ui.invSlip(job, { download: true })}
+                    <div class="job-foot">
+                        ${ui.price(priceLabel, price)}
+                        <div class="actions">
+                            <button class="btn btn-secondary btn-sm" data-id="${id}" onclick="app.restoreJob(this.dataset.id)"><i class="ri-refresh-line"></i> Restore</button>
+                        </div>
+                    </div>
+                </article>
+            `;
+        }).join('');
+    },
+
+    async restoreJob(jobId) {
+        if (!confirm("Are you sure you want to restore this job back to the active list?")) return;
+
+        // Automatically determine if it should go back to "assigned" or "open" based on its history
+        const { data: job } = await supabaseClient.from('jobs').select('assigned_at, do_url').eq('id', jobId).single();
+        const newStatus = (job && (job.assigned_at || job.do_url)) ? 'assigned' : 'open';
+
+        const { error } = await supabaseClient
+            .from('jobs')
+            .update({ status: newStatus })
+            .eq('id', jobId);
+
+        if (error) {
+            ui.notify("Error restoring job: " + error.message);
+        } else {
+            ui.notify("Job successfully restored.");
+            this.fetchHistoryForRT();
+        }
     },
 
     renderRTRequests(requests) {
@@ -2016,7 +2107,7 @@ const app = {
                                    <button class="btn btn-warn btn-sm" data-id="${id}" onclick="app.unassignJob(this.dataset.id)">Undo</button>`
                                 : `<button class="btn btn-primary btn-sm" data-id="${id}" onclick="app.viewBids(this.dataset.id)">View bids</button>`
                             }
-                            <button class="btn btn-danger-ghost btn-sm btn-icon" data-id="${id}" onclick="app.deleteJob(this.dataset.id)" aria-label="Remove job" title="Remove job"><i class="ri-delete-bin-line"></i></button>
+                            <button class="btn btn-danger-ghost btn-sm btn-icon" data-id="${id}" onclick="app.deleteJob(this.dataset.id)" aria-label="Archive job" title="Archive job"><i class="ri-delete-bin-line"></i></button>
                         </div>
                     </div>
                 </article>
