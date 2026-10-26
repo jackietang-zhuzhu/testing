@@ -621,7 +621,7 @@ const app = {
     },
 
     // ==========================================
-    // --- CUSTOMER: saved factory address (used as the pickup) ---
+    // --- CUSTOMER: saved primary address (used as the pickup) ---
     // ==========================================
     async loadFactory() {
         if (this.currentUserRole !== 'customer' || !this.currentUser) return null;
@@ -632,7 +632,7 @@ const app = {
             .maybeSingle();
         if (error) {
             // e.g. the database columns have not been added yet: just behave as "no saved address"
-            console.warn('Factory address not available:', error.message);
+            console.warn('Primary address not available:', error.message);
             this.factory = null;
             return null;
         }
@@ -645,6 +645,13 @@ const app = {
     updateFactoryButton() {
         const btn = document.getElementById('cj-use-factory');
         if (btn) btn.style.display = this.factory ? '' : 'none';
+        // Show the saved primary address itself (textContent: never parsed as HTML)
+        const box = document.getElementById('cj-primary-display');
+        const text = document.getElementById('cj-primary-text');
+        if (box && text) {
+            text.textContent = this.factory ? ui.place(this.factory.loc) : '';
+            box.style.display = this.factory ? '' : 'none';
+        }
     },
 
     useFactory() {
@@ -658,7 +665,7 @@ const app = {
         const { error } = await supabaseClient.rpc('save_my_factory', { p_loc: loc, p_link: link || '' });
         if (error) {
             console.error(error);
-            ui.notify("Your order was placed, but your factory address could not be saved: " + error.message);
+            ui.notify("Your order was placed, but your primary address could not be saved: " + error.message);
             return;
         }
         this.factory = { loc, link: link || '' };
@@ -1432,7 +1439,7 @@ const app = {
         if (mode === 'copy') ui.notify("Copied from your previous order. Please set the date and price.");
         this.showView('customerNewJob');
 
-        // Saved factory address: show the shortcut button, and for a brand-new job fill in the pickup.
+        // Saved primary address: show the shortcut button, and for a brand-new job fill in the pickup.
         // The customer can still overwrite it, and drop-off is always left empty.
         this.updateFactoryButton();
         this.loadFactory().then(factory => {
@@ -1532,7 +1539,7 @@ const app = {
         row('Expected price', `RM ${ui.money(parseFloat(v('cj-price')))}`, 'is-price');
         if (remarks) row('Remarks', ui.esc(remarks));
         if (photoCount) row('Photos', `${photoCount} attached`);
-        if (document.getElementById('cj-save-factory').checked) row('Factory address', 'Pickup will be saved');
+        if (document.getElementById('cj-save-factory').checked) row('Primary address', 'Pickup will be saved');
 
         const editing = !!this.editingJobId;
         document.getElementById('confirm-body').innerHTML = rows.join('');
