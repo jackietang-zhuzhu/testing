@@ -129,16 +129,8 @@
                     <i class="ri-search-line"></i>
                     <input type="search" id="rt-search" class="input" placeholder="Search customer, location, item..." autocomplete="off" aria-label="Search jobs" oninput="app.applyJobFilter('rt')">
                 </div>
-                <div class="field-row">
-                    <div class="field">
-                        <label class="label" for="rt-from">Delivery from</label>
-                        <input type="date" id="rt-from" class="input" onchange="app.applyJobFilter('rt')">
-                    </div>
-                    <div class="field">
-                        <label class="label" for="rt-to">Delivery to</label>
-                        <input type="date" id="rt-to" class="input" onchange="app.applyJobFilter('rt')">
-                    </div>
-                </div>
+                <!-- Delivery months (filled in from the loaded jobs) -->
+                <div id="rt-months" class="chips" aria-label="Filter by delivery month"></div>
                 <div class="filter-meta">
                     <span class="hint" id="rt-count"></span>
                     <button type="button" class="link-btn" id="rt-clear" style="font-size:.8125rem;display:none" onclick="app.clearJobFilter('rt')">Clear filters</button>
@@ -159,12 +151,9 @@
 
         <!-- VIEW: RT HISTORY (archived jobs) -->
         <div id="view-rt-history" class="view hidden">
-            <div class="page-head">
-                <div>
-                    <h2 class="page-title">History</h2>
-                    <p class="page-sub">Archived and past jobs.</p>
-                </div>
-                <button type="button" id="rt-clear-history" class="btn btn-secondary btn-sm hidden" onclick="app.clearHistory()"><i class="ri-eraser-line"></i> Clear history</button>
+            <div>
+                <h2 class="page-title">History</h2>
+                <p class="page-sub">Archived and past jobs.</p>
             </div>
             <!-- Search and date filter (filters the list already loaded; nothing is sent to the database) -->
             <div class="filter-bar">
@@ -188,6 +177,29 @@
                 </div>
             </div>
             <div id="rt-history-container" class="stack"></div>
+        </div>
+
+        <!-- VIEW: RT TRANSPORTERS (per-transporter stats) -->
+        <div id="view-rt-transporters" class="view hidden">
+            <div>
+                <h2 class="page-title">Transporters</h2>
+                <p class="page-sub">Jobs, timing and pricing for each transporter.</p>
+            </div>
+            <div class="filter-bar">
+                <div class="search-box">
+                    <i class="ri-search-line"></i>
+                    <input type="search" id="tp-search" class="input" placeholder="Search transporter..." autocomplete="off" aria-label="Search transporters" oninput="app.renderTransporterStats()">
+                </div>
+                <div class="field">
+                    <label class="label" for="tp-month">Delivery month</label>
+                    <select id="tp-month" class="input" onchange="app.setTpMonth(this.value)"></select>
+                </div>
+                <div class="filter-meta">
+                    <span class="hint" id="tp-count"></span>
+                </div>
+                <span class="hint">On time means the DO was uploaded on or before the agreed delivery date.</span>
+            </div>
+            <div id="rt-transporters-container" class="stack"></div>
         </div>
 
         <!-- VIEW: RT POST JOB -->
@@ -622,6 +634,11 @@
             <li>
                 <button class="tab" data-tab="requests" onclick="app.showRtRequests()">
                     <span class="tab-icon"><i class="ri-inbox-line"></i><span id="requests-badge" class="tab-badge hidden">0</span></span><span>Requests</span>
+                </button>
+            </li>
+            <li>
+                <button class="tab" data-tab="transporters" onclick="app.showRtTransporters()">
+                    <i class="ri-truck-line"></i><span>Transporters</span>
                 </button>
             </li>
             <li>
