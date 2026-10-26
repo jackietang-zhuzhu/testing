@@ -1422,13 +1422,6 @@ const app = {
         const drops = [v('cj-dest'), ...stops.map(s => s.loc)];
         const photoCount = ['cj-photo-1', 'cj-photo-2']
             .filter(id => { const f = document.getElementById(id).files; return f && f.length; }).length;
-        const poFile = document.getElementById('cj-po').files[0] || null;
-        const poError = poFile ? this.checkPoFile(poFile) : '';
-        if (poError) {
-            ui.notify(poError);
-            document.getElementById('cj-po').value = '';
-            return;
-        }
         const remarks = v('cj-remarks');
         const rows = [];
         const row = (label, valueHtml, cls = '') =>
@@ -1443,7 +1436,6 @@ const app = {
         row('Expected price', `RM ${ui.money(parseFloat(v('cj-price')))}`, 'is-price');
         if (remarks) row('Remarks', ui.esc(remarks));
         if (photoCount) row('Photos', `${photoCount} attached`);
-        if (poFile) row('Your PO', ui.esc(poFile.name));
         if (document.getElementById('cj-save-factory').checked) row('Factory address', 'Pickup will be saved');
 
         const editing = !!this.editingJobId;
@@ -1521,11 +1513,6 @@ const app = {
             const { error: stopsError } = await supabaseClient.rpc('set_my_job_stops', { p_stops: extraStops, p_job_id: jobId });
             if (stopsError) { console.error(stopsError); failed.push('the extra drop-offs'); }
         }
-        const poFile = document.getElementById('cj-po').files[0] || null;
-        if (poFile) {
-            const poUrl = await this.uploadPoFile(poFile);
-            if (!poUrl || !(await this.saveCustomerPo(jobId, poUrl))) failed.push('the PO file');
-        }
 
         restore();
         document.getElementById('confirm-modal').classList.add('hidden');
@@ -1548,7 +1535,7 @@ const app = {
     },
 
     // submit_customer_job may return the new job's id (as text, or inside a row), or nothing at all
-    // ---- Customer PO (the customer's own purchase order, used to issue the invoice) ----
+    // ---- Customer PO: uploaded by the customer once the job is delivered; we then issue the invoice from it ----
     checkPoFile(file) {
         const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
         if (!file.type.startsWith('image/') && !isPdf) return 'Please upload your PO as an image (PNG or JPG) or a PDF.';
@@ -1572,7 +1559,6 @@ const app = {
         return supabaseClient.storage.from('job-photos').getPublicUrl(filePath).data.publicUrl;
     },
 
-    // jobId = null means "my newest order" (same convention as set_my_job_stops)
     async saveCustomerPo(jobId, url) {
         const { error } = await supabaseClient.rpc('attach_customer_po', { p_job_id: jobId, p_url: url });
         if (error) { console.error('PO save error:', error); return false; }
@@ -1743,7 +1729,7 @@ const app = {
                     ${ui.photos(job, true)}
                     ${ui.remarks(job.remarks)}
                     ${ui.doSlip(job, { showTime: true, timeLabel: 'Delivered' })}
-                    ${ui.poSlip(job, { title: 'Your PO', upload: true })}
+                    ${ui.poSlip(job, { title: 'Your PO', upload: stage === 'delivered' })}
                     ${foot}
                 </article>
             `;
