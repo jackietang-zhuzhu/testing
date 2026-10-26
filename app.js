@@ -964,8 +964,34 @@ const app = {
         this.renderRTHistory(jobs || []);
     },
 
-    renderRTHistory(allJobs) {
-        this.historyList = allJobs;
+    // "Clear history" only hides jobs on this device. Nothing is deleted from Supabase.
+    hiddenHistoryIds() {
+        try { return new Set(JSON.parse(localStorage.getItem('rt_hidden_history') || '[]').map(String)); }
+        catch { return new Set(); }
+    },
+
+    clearHistory() {
+        const visible = (this.historyList || []).filter(j => !this.hiddenHistoryIds().has(String(j.id)));
+        if (!visible.length) return;
+        if (!confirm(`Clear ${visible.length} job${visible.length === 1 ? '' : 's'} from History? They stay in the database, they are only hidden here.`)) return;
+        const ids = this.hiddenHistoryIds();
+        visible.forEach(j => ids.add(String(j.id)));
+        try { localStorage.setItem('rt_hidden_history', JSON.stringify([...ids])); }
+        catch { ui.notify('Could not clear history on this browser.'); return; }
+        ui.notify('History cleared.');
+        this.renderRTHistory(this.historyList || []);
+    },
+
+    renderRTHistory(fetched) {
+        this.historyList = fetched;
+        // forget hidden ids that no longer exist (e.g. cleaned from Supabase) so the list does not grow forever
+        const hiddenIds = this.hiddenHistoryIds();
+        const present = new Set(fetched.map(j => String(j.id)));
+        const kept = [...hiddenIds].filter(id => present.has(id));
+        if (kept.length !== hiddenIds.size) { try { localStorage.setItem('rt_hidden_history', JSON.stringify(kept)); } catch {} }
+        const allJobs = fetched.filter(j => !kept.includes(String(j.id)));
+        const clearBtn = document.getElementById('rt-clear-history');
+        if (clearBtn) clearBtn.classList.toggle('hidden', allJobs.length === 0);
         const container = document.getElementById('rt-history-container');
         if (allJobs.length === 0) {
             this.updateFilterUi('hist', 0, 0);
