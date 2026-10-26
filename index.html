@@ -215,6 +215,11 @@
                             </a>
                         </div>
                     </div>
+                    <div class="field">
+                        <label class="label" for="job-pickup-time">Pickup time (optional)</label>
+                        <input type="time" id="job-pickup-time" class="input">
+                        <span class="hint">Leave empty if any time is fine.</span>
+                    </div>
                 </fieldset>
 
                 <fieldset class="fieldset">
@@ -341,6 +346,11 @@
                             <span class="hint">What you are willing to pay for this delivery.</span>
                         </div>
                     </div>
+                    <div class="field">
+                        <label class="label" for="cj-pickup-time">Preferred pickup time (optional)</label>
+                        <input type="time" id="cj-pickup-time" class="input">
+                        <span class="hint">Leave empty if any time is fine.</span>
+                    </div>
                 </fieldset>
 
                 <fieldset class="fieldset">
@@ -455,6 +465,19 @@
             </li>
         </ul>
     </nav>
+
+    <!-- ORDER CONFIRMATION (customer checks the summary before anything is sent) -->
+    <div id="confirm-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+        <div class="modal-card">
+            <h2 class="page-title" id="confirm-title">Check your order</h2>
+            <p class="page-sub">Please make sure everything is correct before you confirm.</p>
+            <dl id="confirm-body" class="confirm-list"></dl>
+            <div class="actions-wide" style="margin-top:18px">
+                <button type="button" id="confirm-back" class="btn btn-secondary" onclick="app.closeConfirm()">Go back</button>
+                <button type="button" id="cj-confirm-btn" class="btn btn-go" onclick="app.submitCustomerJob()">Confirm order</button>
+            </div>
+        </div>
+    </div>
 
     <div id="toast-region" class="toast-region" role="status" aria-live="polite"></div>
 
