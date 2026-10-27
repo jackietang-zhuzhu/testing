@@ -141,8 +141,8 @@ const ui = {
             .filter(s => s && typeof s.loc === 'string' && s.loc.trim())
             .map(s => ({ loc: s.loc, link: typeof s.link === 'string' ? s.link : '' }));
     },
-    // Person in charge + phone for each stop, and the preferred time, saved on jobs.contacts as
-    //   { pickup: { pic, phone }, drops: [{ pic, phone }, ...], slot }   (drops[0] = main drop-off, then the extra ones)
+    // Person in charge + phone for each stop, saved on jobs.contacts as
+    //   { pickup: { pic, phone }, drops: [{ pic, phone }, ...] }   (drops[0] = main drop-off, then the extra ones)
     contactsOf(job) {
         let c = job && job.contacts;
         if (typeof c === 'string') { try { c = JSON.parse(c); } catch { c = null; } }
@@ -152,13 +152,12 @@ const ui = {
             : { pic: '', phone: '' };
         return {
             pickup: one(c.pickup),
-            drops: Array.isArray(c.drops) ? c.drops.map(one) : [],
-            slot: (c.slot === 'Morning' || c.slot === 'Afternoon') ? c.slot : ''
+            drops: Array.isArray(c.drops) ? c.drops.map(one) : []
         };
     },
     hasContacts(job) {
         const c = this.contactsOf(job);
-        return !!(c.slot || c.pickup.pic || c.pickup.phone || c.drops.some(d => d.pic || d.phone));
+        return !!(c.pickup.pic || c.pickup.phone || c.drops.some(d => d.pic || d.phone));
     },
     contactLine(p) {
         if (!p || (!p.pic && !p.phone)) return '';
@@ -194,8 +193,6 @@ const ui = {
         const extraDrops = this.stops(job).length;
         if (extraDrops) items.push(`<li class="fact"><i class="ri-route-line"></i>${extraDrops + 1} drop-offs</li>`);
         if (date) items.push(`<li class="fact"><i class="ri-calendar-line"></i>${this.esc(dateLabel)} ${this.fmtDate(date)}</li>`);
-        const slot = this.contactsOf(job).slot;
-        if (slot) items.push(`<li class="fact"><i class="ri-time-line"></i>${this.esc(slot)} delivery</li>`);
         if (job.unloading_service) items.push(`<li class="fact fact-warn"><i class="ri-hand-coin-line"></i>Unloading required</li>`);
         if (delivered) items.push(`<li class="fact fact-ok"><i class="ri-check-double-line"></i>Delivered</li>`);
         return `<ul class="facts">${items.join('')}</ul>`;
@@ -789,7 +786,7 @@ const app = {
             .map(s => s.link ? s : { loc: s.loc });
     },
 
-    // Person in charge + contact number for the pickup and every drop-off, and the preferred time.
+    // Person in charge + contact number for the pickup and every drop-off.
     // Same row filter as collectStops, so drops[i] always lines up with the stops. Returns null when nothing was entered.
     collectContacts(prefix) {
         const val = (id) => { const el = document.getElementById(prefix + '-' + id); return el ? el.value.trim() : ''; };
@@ -800,10 +797,9 @@ const app = {
             drops: [
                 { pic: val('dest-pic'), phone: val('dest-phone') },
                 ...rows.map(r => ({ pic: r.querySelector('.stop-pic').value.trim(), phone: r.querySelector('.stop-phone').value.trim() }))
-            ],
-            slot: val('slot')
+            ]
         };
-        const any = out.slot || out.pickup.pic || out.pickup.phone || out.drops.some(d => d.pic || d.phone);
+        const any = out.pickup.pic || out.pickup.phone || out.drops.some(d => d.pic || d.phone);
         return any ? out : null;
     },
 
@@ -1807,7 +1803,6 @@ const app = {
         set('cj-source-phone', cs.pickup.phone);
         set('cj-dest-pic', (cs.drops[0] || {}).pic);
         set('cj-dest-phone', (cs.drops[0] || {}).phone);
-        set('cj-slot', cs.slot);
         this.fillStops('cj', ui.stops(job).map((s, i) => ({ ...s, ...(cs.drops[i + 1] || {}) })));
 
         const sel = document.getElementById('cj-item');
@@ -1884,7 +1879,7 @@ const app = {
         const row = (label, valueHtml, cls = '') =>
             rows.push(`<div class="confirm-row ${cls}"><dt>${label}</dt><dd>${valueHtml}</dd></div>`);
 
-        const cs = this.collectContacts('cj') || { pickup: {}, drops: [], slot: '' };
+        const cs = this.collectContacts('cj') || { pickup: {}, drops: [] };
         const who = (p) => (p && (p.pic || p.phone)) ? `<br><small>${[p.pic, p.phone].filter(Boolean).map(x => ui.esc(x)).join(' &middot; ')}</small>` : '';
         row('Pickup', ui.esc(v('cj-source')) + who(cs.pickup));
         row(drops.length > 1 ? 'Drop-offs' : 'Drop-off',
@@ -1892,7 +1887,6 @@ const app = {
         row('Load', `${ui.esc(v('cj-qty'))} &times; ${ui.esc(itemDesc.replace(/^Others:\s*/, ''))}`);
         row('Unloading', document.getElementById('cj-unloading').checked ? 'Required' : 'Not needed');
         row('Delivery date', ui.fmtDate(v('cj-date')));
-        if (cs.slot) row('Preferred time', ui.esc(cs.slot));
         row('Expected price', `RM ${ui.money(parseFloat(v('cj-price')))}`, 'is-price');
         if (remarks) row('Remarks', ui.esc(remarks));
         if (photoCount) row('Photos', `${photoCount} attached`);
