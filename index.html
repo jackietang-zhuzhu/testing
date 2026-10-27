@@ -153,24 +153,15 @@
         <div id="view-rt-history" class="view hidden">
             <div>
                 <h2 class="page-title">History</h2>
-                <p class="page-sub">Archived and past jobs.</p>
+                <p class="page-sub">Archived jobs, one delivery month at a time.</p>
             </div>
-            <!-- Search and date filter (filters the list already loaded; nothing is sent to the database) -->
+            <!-- Month buttons: this month first, older months after it. Search looks inside the chosen month. -->
             <div class="filter-bar">
                 <div class="search-box">
                     <i class="ri-search-line"></i>
                     <input type="search" id="hist-search" class="input" placeholder="Search customer, location, item..." autocomplete="off" aria-label="Search jobs" oninput="app.applyJobFilter('hist')">
                 </div>
-                <div class="field-row">
-                    <div class="field">
-                        <label class="label" for="hist-from">Delivery from</label>
-                        <input type="date" id="hist-from" class="input" onchange="app.applyJobFilter('hist')">
-                    </div>
-                    <div class="field">
-                        <label class="label" for="hist-to">Delivery to</label>
-                        <input type="date" id="hist-to" class="input" onchange="app.applyJobFilter('hist')">
-                    </div>
-                </div>
+                <div id="hist-months" class="chips" aria-label="Choose delivery month"></div>
                 <div class="filter-meta">
                     <span class="hint" id="hist-count"></span>
                     <button type="button" class="link-btn" id="hist-clear" style="font-size:.8125rem;display:none" onclick="app.clearJobFilter('hist')">Clear filters</button>
@@ -377,7 +368,8 @@
                 <button onclick="app.showCustomerHome()" class="back-btn" aria-label="Back to my orders"><i class="ri-arrow-left-line"></i></button>
                 <h2 class="page-title">History</h2>
             </div>
-            <p class="page-sub">Past orders that are no longer in your active list.</p>
+            <p class="page-sub">Past orders that are no longer in your active list, by delivery month.</p>
+            <div id="customer-hist-months" class="chips" aria-label="Choose delivery month"></div>
             <div id="customer-history-container" class="stack"></div>
         </div>
 
@@ -592,8 +584,9 @@
         <div id="view-transporter-history" class="view hidden">
             <div>
                 <h2 class="page-title">History</h2>
-                <p class="page-sub">Past jobs that are no longer in your active list.</p>
+                <p class="page-sub">Past jobs that are no longer in your active list, by delivery month.</p>
             </div>
+            <div id="transporter-hist-months" class="chips" aria-label="Choose delivery month"></div>
             <div id="transporter-history-container" class="stack"></div>
         </div>
 
