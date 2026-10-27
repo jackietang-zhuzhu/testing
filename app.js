@@ -407,6 +407,10 @@ const app = {
     confirmReturnFocus: null,
     MAX_EXTRA_STOPS: 4,      // so a job can have up to 5 drop-offs in total
     rtMonth: '',             // Jobs page: chosen delivery month ('' = all), e.g. '2026-10'
+    histMonth: { admin: '', customer: '', transporter: '' },  // History pages: chosen month ('' = this month)
+    histCounts: { admin: {} },  // admin History: archived jobs per delivery month
+    histReq: 0,              // newest admin History request (drops answers that arrive late)
+    myHistoryBids: [],
     tpData: null,            // Transporters tab: loaded bids, transporters and cancellations
     tpMonth: '',             // Transporters tab: chosen month ('' = not chosen yet, 'all' = all time)
 
@@ -510,6 +514,9 @@ const app = {
         this.knownStages = null;
         this.currentBidsJobId = null;
         this.rtMonth = '';
+        this.histMonth = { admin: '', customer: '', transporter: '' };
+        this.histCounts = { admin: {} };
+        this.myHistoryBids = [];
         this.tpData = null;
         this.tpMonth = '';
         this.rtJobsList = [];
@@ -534,6 +541,7 @@ const app = {
         document.getElementById('rt-history-container').innerHTML = '';
         document.getElementById('rt-transporters-container').innerHTML = '';
         document.getElementById('rt-months').innerHTML = '';
+        ['hist-months', 'customer-hist-months', 'transporter-hist-months'].forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = ''; });
         this.updateRequestsBadge(0);
         document.getElementById('transporter-jobs-container').innerHTML = '';
         document.getElementById('my-jobs-container').innerHTML = '';
@@ -953,40 +961,66 @@ const app = {
         const container = document.getElementById('rt-history-container');
         if (!silent) container.innerHTML = ui.skeleton(3);
 
-        const { data: jobs, error } = await supabaseClient
-            .from('jobs')
-            .select('*, customers(company_name, contact_person, phone)')
-            .eq('status', 'archived')
-            .order('created_at', { ascending: false });
+        // Only the chosen month is loaded (plus a light list of dates for the month buttons),
+        // so History stays fast and never hits the 1000-row limit however many jobs pile up.
+        const req = this.histReq = (this.histReq || 0) + 1;
+        const month = this.histMonthOf('admin');
+        const [jobsRes, datesRes] = await Promise.all([
+            this.fetchAllRows(() => supabaseClient
+                .from('jobs')
+                .select('*, customers(company_name, contact_person, phone)')
+                .eq('status', 'archived')
+                .gte('delivery_date', month + '-01')
+                .lt('delivery_date', this.nextMonthKey(month) + '-01')
+                .order('created_at', { ascending: false })
+                .order('id')),
+            this.fetchAllRows(() => supabaseClient
+                .from('jobs')
+                .select('delivery_date')
+                .eq('status', 'archived')
+                .order('delivery_date')
+                .order('id'))
+        ]);
+        if (req !== this.histReq) return;   // a newer request (another month) is already on its way
 
-        if (error) {
-            console.error(error);
+        if (jobsRes.error) {
+            console.error(jobsRes.error);
             if (!silent) container.innerHTML = ui.errorBlock('Check your connection and try again.');
             return;
         }
+        if (datesRes.error) console.error('Could not load history months:', datesRes.error);
 
+        const jobs = jobsRes.data || [];
         await this.attachJobDocs(jobs);
+        if (req !== this.histReq) return;
 
         if (silent && !this.viewIs('rtHistory')) return;
-        const sig = JSON.stringify(jobs);
+        const counts = datesRes.error ? { [month]: jobs.length } : this.countByMonth(datesRes.data || [], r => r.delivery_date);
+        const sig = JSON.stringify({ month, jobs, counts });
         if (silent && sig === this.lastSig.history) return;
         this.lastSig.history = sig;
 
-        this.renderRTHistory(jobs || []);
+        this.histCounts.admin = counts;
+        this.renderRTHistory(jobs);
     },
 
     renderRTHistory(allJobs) {
         this.historyList = allJobs;
+        const month = this.histMonthOf('admin');
+        const counts = this.histCounts.admin || {};
+        this.renderHistChips('hist-months', counts, month, 'admin');
         const container = document.getElementById('rt-history-container');
         if (allJobs.length === 0) {
             this.updateFilterUi('hist', 0, 0);
-            container.innerHTML = ui.empty('ri-history-line', 'No history yet', 'Jobs you remove from the active list will appear here.');
+            const older = Object.keys(counts).some(k => k !== month && counts[k] > 0);
+            container.innerHTML = ui.empty('ri-history-line', 'No history in ' + this.monthLabel(month),
+                older ? 'Pick an earlier month above to see older jobs.' : 'Jobs you remove from the active list will appear here.');
             return;
         }
         const jobs = this.filterJobs(allJobs, 'hist');
         this.updateFilterUi('hist', jobs.length, allJobs.length);
         if (jobs.length === 0) {
-            container.innerHTML = ui.empty('ri-search-line', 'No matching jobs', 'Try a different name or date.');
+            container.innerHTML = ui.empty('ri-search-line', 'No matching jobs', 'Nothing in ' + this.monthLabel(month) + ' matches. Try a different name, or pick another month.');
             return;
         }
 
@@ -2200,9 +2234,15 @@ const app = {
 
     renderCustomerHistory() {
         const container = document.getElementById('customer-history-container');
-        const jobs = this.customerHistory || [];
+        const all = this.customerHistory || [];
+        const month = this.histMonthOf('customer');
+        const counts = this.countByMonth(all, j => j.delivery_date);
+        this.renderHistChips('customer-hist-months', counts, month, 'customer');
+        const jobs = all.filter(j => this.monthKey(j.delivery_date) === month);
         if (jobs.length === 0) {
-            container.innerHTML = ui.empty('ri-history-line', 'No history yet', 'Orders that have been removed from your list will appear here.');
+            const older = all.length > 0;
+            container.innerHTML = ui.empty('ri-history-line', older ? 'No history in ' + this.monthLabel(month) : 'No history yet',
+                older ? 'Pick an earlier month above to see older orders.' : 'Orders that have been removed from your list will appear here.');
             return;
         }
         container.innerHTML = jobs.map(job => {
@@ -2420,10 +2460,18 @@ const app = {
         this.fetchMyJobs(true);
     },
 
-    renderTransporterHistory(bids) {
+    renderTransporterHistory(allBids) {
+        this.myHistoryBids = allBids;
         const container = document.getElementById('transporter-history-container');
+        const month = this.histMonthOf('transporter');
+        const dateOf = (b) => b.proposed_date || b.jobs.delivery_date;   // the agreed date, like the Transporters tab
+        const counts = this.countByMonth(allBids, dateOf);
+        this.renderHistChips('transporter-hist-months', counts, month, 'transporter');
+        const bids = allBids.filter(b => this.monthKey(dateOf(b)) === month);
         if (!bids.length) {
-            container.innerHTML = ui.empty('ri-history-line', 'No history yet', 'Jobs that have been removed from your list will appear here.');
+            const older = allBids.length > 0;
+            container.innerHTML = ui.empty('ri-history-line', older ? 'No history in ' + this.monthLabel(month) : 'No history yet',
+                older ? 'Pick an earlier month above to see older jobs.' : 'Jobs that have been removed from your list will appear here.');
             return;
         }
         container.innerHTML = bids.map(bid => {
@@ -2513,6 +2561,43 @@ const app = {
         if (!m) return 'No date';
         return new Date(Number(m[1]), Number(m[2]) - 1, 1)
             .toLocaleDateString('en-MY', { month: short ? 'short' : 'long', year: 'numeric' });
+    },
+
+    // ---------- History: one delivery month at a time (admin, customer and transporter) ----------
+    thisMonthKey() { return this.myDay(new Date()).slice(0, 7); },
+
+    nextMonthKey(key) {
+        const [y, m] = key.split('-').map(Number);
+        return m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`;
+    },
+
+    // The month a History page is showing: the one picked, otherwise this month
+    histMonthOf(role) { return this.histMonth[role] || this.thisMonthKey(); },
+
+    // Month buttons: this month always first, then older months (latest first). counts = { 'YYYY-MM': n }
+    renderHistChips(boxId, counts, active, role) {
+        const box = document.getElementById(boxId);
+        if (!box) return;
+        const cur = this.thisMonthKey();
+        const keys = new Set([cur, active, ...Object.keys(counts).filter(k => counts[k] > 0)]);
+        const sorted = [...keys].sort().reverse();
+        box.innerHTML = sorted.map(k => {
+            const label = k === cur ? 'This month' : this.monthLabel(k, true);
+            return `<button type="button" class="chip${k === active ? ' is-active' : ''}" data-role="${role}" data-month="${ui.esc(k)}" onclick="app.setHistMonth(this.dataset.role, this.dataset.month)">${ui.esc(label)} <span class="chip-count">${counts[k] || 0}</span></button>`;
+        }).join('');
+    },
+
+    countByMonth(items, dateOf) {
+        const counts = {};
+        items.forEach(it => { const k = this.monthKey(dateOf(it)); if (k) counts[k] = (counts[k] || 0) + 1; });
+        return counts;
+    },
+
+    setHistMonth(role, key) {
+        this.histMonth[role] = key || '';
+        if (role === 'admin') this.fetchHistoryForRT();
+        else if (role === 'customer') this.renderCustomerHistory();
+        else this.renderTransporterHistory(this.myHistoryBids || []);
     },
 
     setRtMonth(key) {
