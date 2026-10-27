@@ -1127,8 +1127,19 @@ const app = {
         if (!confirm("Are you sure you want to restore this job back to the active list?")) return;
 
         // Automatically determine if it should go back to "assigned" or "open" based on its history
+        // A job goes back to "assigned" if any sign of an award is left: assignment time, a DO,
+        // an accepted bid, or a PO / invoice. Only a job with none of these goes back to "open".
         const { data: job } = await supabaseClient.from('jobs').select('assigned_at, do_url').eq('id', jobId).single();
-        const newStatus = (job && (job.assigned_at || job.do_url)) ? 'assigned' : 'open';
+        let awarded = !!(job && (job.assigned_at || job.do_url));
+        if (!awarded) {
+            const [bidRes, docRes] = await Promise.all([
+                supabaseClient.from('bids').select('id').eq('job_id', jobId).eq('status', 'accepted').limit(1),
+                supabaseClient.from('job_docs').select('po_url, invoice_url').eq('job_id', jobId).limit(1)
+            ]);
+            const doc = docRes.data && docRes.data[0];
+            awarded = !!((bidRes.data && bidRes.data.length) || (doc && (doc.po_url || doc.invoice_url)));
+        }
+        const newStatus = awarded ? 'assigned' : 'open';
 
         const { error } = await supabaseClient
             .from('jobs')
