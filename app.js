@@ -377,7 +377,7 @@ const ui = {
     },
     // Customer: the box on a delivered order. Tap a star and it is saved straight away; tap another star to change it.
     ratingBox(job) {
-        if (app.noRatings) return ''; // the ratings table is not set up yet: show nothing rather than a broken box
+        if (app.noRatings) return ''; // the rating columns are not set up in Supabase yet: show nothing rather than a broken box
         const id = this.esc(job.id);
         const picked = job.customer_rating ? job.customer_rating.rating : 0;
         const busy = app.ratingBusy === String(job.id);
@@ -438,7 +438,7 @@ const app = {
     myHistoryBids: [],
     tpData: null,            // Transporters tab: loaded bids, transporters, cancellations and ratings
     ratingBusy: null,        // customer: id of the order whose rating is being saved (blocks a second tap meanwhile)
-    noRatings: false,        // set when the job_ratings table is not in Supabase yet (the rating box is then hidden)
+    noRatings: false,        // set when the rating columns are not in job_docs yet (the rating box is then hidden)
     tpMonth: '',             // Transporters tab: chosen month ('' = not chosen yet, 'all' = all time)
 
     async init() {
@@ -950,7 +950,6 @@ const app = {
             
         if (error) { console.error(error); if (!silent) rtJobsContainer.innerHTML = ui.errorBlock('Check your connection and try again.'); return; }
         await this.attachJobDocs(jobs);
-        await this.attachJobRatings(jobs);
         if (silent && !this.viewIs('rtHome', 'rtRequests')) return;
         const all = jobs || [];
         const requests = all.filter(j => j.status === 'pending_review');
@@ -1025,7 +1024,6 @@ const app = {
 
         const jobs = jobsRes.data || [];
         await this.attachJobDocs(jobs);
-        await this.attachJobRatings(jobs);
         if (req !== this.histReq) return;
 
         if (silent && !this.viewIs('rtHistory')) return;
@@ -2086,10 +2084,18 @@ const app = {
     // what comes back: a customer only gets their own, the admin gets all, transporters get none.
     async attachJobDocs(jobs) {
         if (!jobs || !jobs.length) return jobs;
-        let query = supabaseClient.from('job_docs')
-            .select('job_id, po_url, po_uploaded_at, invoice_url, invoice_uploaded_at');
-        if (jobs.length === 1) query = query.eq('job_id', jobs[0].id);
-        const { data, error } = await query;
+        const docCols = 'job_id, po_url, po_uploaded_at, invoice_url, invoice_uploaded_at';
+        const load = (cols) => {
+            let query = supabaseClient.from('job_docs').select(cols);
+            if (jobs.length === 1) query = query.eq('job_id', jobs[0].id);
+            return query;
+        };
+        let { data, error } = await load(this.noRatings ? docCols : docCols + ', rating, rated_at');
+        if (error && !this.noRatings && /rating|rated_at/i.test(error.message || '')) {
+            // the rating columns are not added in Supabase yet: carry on without ratings (and hide the rating box)
+            this.noRatings = true;
+            ({ data, error } = await load(docCols));
+        }
         if (error) { console.error('Documents load error:', error); return jobs; }
         const byJob = new Map((data || []).map(r => [String(r.job_id), r]));
         const pack = (url, at) => url ? { url, uploaded_at: at } : null;
@@ -2097,6 +2103,8 @@ const app = {
             const r = byJob.get(String(x.id));
             x.customer_po = r ? pack(r.po_url, r.po_uploaded_at) : null;
             x.invoice_file = r ? pack(r.invoice_url, r.invoice_uploaded_at) : null;
+            // the customer's star rating of the transporter (customers get their own, the admin gets all)
+            x.customer_rating = (r && r.rating) ? { rating: Number(r.rating), created_at: r.rated_at } : null;
         });
         return jobs;
     },
@@ -2115,28 +2123,6 @@ const app = {
         jobs.forEach(x => {
             const r = byJob.get(String(x.id));
             if (r) { x.contacts = r.contacts; x.dos = r.dos; }
-        });
-        return jobs;
-    },
-
-    // Adds job.customer_rating ({ rating, created_at } or null) to each job, from the job_ratings table
-    // (one row per job). Row-level security decides what comes back: a customer only gets their own, the admin
-    // gets all, transporters get none. If the table is not there yet the jobs still show, just without ratings.
-    async attachJobRatings(jobs) {
-        if (!jobs || !jobs.length || this.noRatings) return jobs;
-        const { data, error } = await this.fetchAllRows(() => supabaseClient
-            .from('job_ratings')
-            .select('job_id, rating, created_at')
-            .order('created_at', { ascending: false }));
-        if (error) {
-            console.error('Ratings load error:', error);
-            if (/does not exist|schema cache|relation/i.test(error.message || '')) this.noRatings = true; // stop asking until the page is reloaded
-            return jobs;
-        }
-        const byJob = new Map((data || []).map(r => [String(r.job_id), r]));
-        jobs.forEach(x => {
-            const r = byJob.get(String(x.id));
-            x.customer_rating = r ? { rating: Number(r.rating), created_at: r.created_at } : null;
         });
         return jobs;
     },
@@ -2206,7 +2192,6 @@ const app = {
         }
         await this.attachJobDocs(jobs);
         await this.attachJobExtras(jobs);
-        await this.attachJobRatings(jobs);
         if (silent && !this.viewIs('customerHome', 'customerHistory')) return;
         // jobs the admin removed (archived) are not shown to customers
         const visible = (jobs || []).filter(j => j.status !== 'archived');
@@ -2972,7 +2957,7 @@ const app = {
             this.fetchAllRows(() => supabaseClient.from('bids').select('*, jobs(*)').order('created_at', { ascending: false })),
             supabaseClient.from('transporters').select('id, company_name, contact_person, phone, banned_until, last_active_at'),
             supabaseClient.from('job_cancellations').select('job_id, transporter_id, delivery_date, cancelled_at'),
-            this.fetchAllRows(() => supabaseClient.from('job_ratings').select('job_id, transporter_id, rating, created_at').order('created_at', { ascending: false }))
+            this.fetchAllRows(() => supabaseClient.from('job_docs').select('job_id, rating, rated_at, rated_transporter_id').not('rating', 'is', null).order('job_id'))
         ]);
 
         if (bidsRes.error) {
@@ -2990,7 +2975,7 @@ const app = {
             transporters: tpRes.data || [],
             cancels: cancelRes.error ? [] : (cancelRes.data || []),
             cancelOk: !cancelRes.error,
-            ratings: ratingsRes.error ? [] : (ratingsRes.data || []),
+            ratings: ratingsRes.error ? [] : (ratingsRes.data || []).map(r => ({ job_id: r.job_id, transporter_id: r.rated_transporter_id, rating: r.rating, created_at: r.rated_at })),
             ratingsOk: !ratingsRes.error
         };
         const sig = JSON.stringify(data);
@@ -3112,7 +3097,7 @@ const app = {
             if (inMonth(this.monthKey(c.delivery_date))) get(c.transporter_id).cancelled++;
         });
 
-        // Customer ratings count in the delivery month of the job they belong to (newest first, as loaded)
+        // Customer ratings count in the delivery month of the job they belong to
         const bidFor = new Map(d.bids.map(b => [`${b.job_id}|${b.transporter_id}`, b]));
         d.ratings.forEach(r => {
             const b = bidFor.get(`${r.job_id}|${r.transporter_id}`);
@@ -3138,7 +3123,7 @@ const app = {
         const note = (d.cancelOk ? '' :
             `<div class="notice notice-warn"><i class="ri-information-line"></i><span>"Taken back" is not being recorded yet. The job_cancellations table is missing in Supabase.</span></div>`) +
             (d.ratingsOk ? '' :
-            `<div class="notice notice-warn"><i class="ri-information-line"></i><span>Customer ratings could not be loaded. Is the job_ratings table created in Supabase?</span></div>`);
+            `<div class="notice notice-warn"><i class="ri-information-line"></i><span>Customer ratings could not be loaded. Has the rating SQL been run in Supabase?</span></div>`);
 
         if (!rows.length) {
             container.innerHTML = note + ui.empty('ri-truck-line', 'No transporter activity',
