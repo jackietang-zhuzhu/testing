@@ -883,6 +883,11 @@ const app = {
         // Pick up bans/unbans done in Supabase before the lists are redrawn
         await this.refreshTransporterProfile();
         if (!this.currentUser) return; // logged out while waiting
+        // Heartbeat: keep "last active" fresh while a transporter keeps the app open (at most every 5 min)
+        if (this.currentUserRole === 'transporter' && Date.now() - (this.lastPing || 0) > 5 * 60 * 1000) {
+            this.lastPing = Date.now();
+            this.updateActivityStatus();
+        }
         switch (this.currentView) {
             case 'rtHome':
             case 'rtRequests':
@@ -2868,7 +2873,7 @@ const app = {
 
         const [bidsRes, tpRes, cancelRes] = await Promise.all([
             this.fetchAllRows(() => supabaseClient.from('bids').select('*, jobs(*)').order('created_at', { ascending: false })),
-            supabaseClient.from('transporters').select('id, company_name, contact_person, phone, banned_until'),
+            supabaseClient.from('transporters').select('id, company_name, contact_person, phone, banned_until, last_active_at'),
             supabaseClient.from('job_cancellations').select('job_id, transporter_id, delivery_date, cancelled_at')
         ]);
 
@@ -2897,6 +2902,19 @@ const app = {
     setTpMonth(key) {
         this.tpMonth = key || 'all';
         this.renderTransporterStats();
+    },
+
+    // "Just now", "5 min ago", "3 hr ago", "2 days ago"
+    relativeTime(iso) {
+        const d = new Date(iso);
+        if (!iso || isNaN(d)) return 'Never';
+        const mins = Math.max(0, Math.floor((Date.now() - d.getTime()) / 60000));
+        if (mins < 1) return 'Just now';
+        if (mins < 60) return `${mins} min ago`;
+        const hrs = Math.floor(mins / 60);
+        if (hrs < 24) return `${hrs} hr ago`;
+        const days = Math.floor(hrs / 24);
+        return `${days} day${days === 1 ? '' : 's'} ago`;
     },
 
     // Malaysia calendar day (YYYY-MM-DD) of a timestamp
@@ -3050,6 +3068,7 @@ const app = {
                             <div class="bid-contact">
                                 ${p.contact_person ? `<span><i class="ri-user-line"></i>${ui.esc(p.contact_person)}</span>` : ''}
                                 ${phoneHtml}
+                                <span title="${ui.esc(p.last_active_at ? ui.fmtDateTime(p.last_active_at) : 'Has not opened the job board yet')}"><i class="ri-time-line"></i>Last active: ${ui.esc(this.relativeTime(p.last_active_at))}${p.last_active_at ? ` <span class="hint">(${ui.fmtDateTime(p.last_active_at)})</span>` : ''}</span>
                             </div>
                         </div>
                         <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">${pills.join('')}</div>
