@@ -668,3 +668,32 @@ input[type="file"]::file-selector-button {
 .tp-stat.is-stop b { color: var(--stop-ink); }
 .tp-stat.is-ok b { color: var(--go-ink); }
 .tp-line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-top: 4px; }
+
+/* ---------- Customer rating of the transporter (optional) ---------- */
+.rate-box {
+    display: flex; flex-direction: column; gap: 6px;
+    padding: 12px;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+}
+.rate-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: .875rem; }
+.rate-head b { font-weight: 600; }
+.rate-stars { display: flex; gap: 2px; margin-left: -6px; }
+.rate-star {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 44px; height: 44px; padding: 0;
+    border: 0; border-radius: 8px;
+    background: transparent;
+    color: var(--line-strong);
+    font-size: 1.75rem; line-height: 1;
+    cursor: pointer;
+    transition: color .12s, background .12s, transform .12s;
+}
+.rate-star.is-on { color: var(--road); }
+.rate-star:hover:not(:disabled) { background: var(--road-soft); }
+.rate-star:active:not(:disabled) { transform: scale(.92); }
+.rate-star:disabled { cursor: default; }
+.rate-star:focus-visible { outline: 2px solid var(--info); outline-offset: 2px; }
+.stars { display: inline-flex; gap: 1px; vertical-align: middle; color: var(--road); font-size: 1rem; }
+.stars .ri-star-line { color: var(--line-strong); }
