@@ -363,6 +363,31 @@ const ui = {
     remarks(text) {
         return text ? `<p class="remarks"><b>Remarks:</b> ${this.esc(text)}</p>` : '';
     },
+    // ----- customer rating of the transporter (optional) -----
+    // Five stars, read-only. n is rounded to a whole star.
+    stars(n) {
+        const v = Math.max(0, Math.min(5, Math.round(Number(n) || 0)));
+        return `<span class="stars" role="img" aria-label="${v} out of 5 stars">${[1, 2, 3, 4, 5].map(i => `<i class="${i <= v ? 'ri-star-fill' : 'ri-star-line'}"></i>`).join('')}</span>`;
+    },
+    // Admin: one read-only line on a delivered job. Nothing is drawn for jobs nobody rated.
+    ratingLine(job) {
+        const r = job && job.customer_rating;
+        if (!r) return '';
+        return `<p class="remarks"><b>Customer rating:</b> ${this.stars(r.rating)}</p>`;
+    },
+    // Customer: the box on a delivered order. Tap a star and it is saved straight away; tap another star to change it.
+    ratingBox(job) {
+        if (app.noRatings) return ''; // the ratings table is not set up yet: show nothing rather than a broken box
+        const id = this.esc(job.id);
+        const picked = job.customer_rating ? job.customer_rating.rating : 0;
+        const busy = app.ratingBusy === String(job.id);
+        const star = (n) => `<button type="button" role="radio" class="rate-star${n <= picked ? ' is-on' : ''}" aria-checked="${n === picked}" aria-label="${n} star${n === 1 ? '' : 's'}"${busy ? ' disabled' : ''} data-id="${id}" data-n="${n}" onclick="app.rate(this.dataset.id, Number(this.dataset.n))"><i class="${n <= picked ? 'ri-star-fill' : 'ri-star-line'}"></i></button>`;
+        return `
+            <div class="rate-box" data-job="${id}">
+                <div class="rate-head"><b>${picked ? 'Your rating' : 'How was the delivery?'}</b><span class="hint">${picked ? 'Tap a star to change' : 'Optional'}</span></div>
+                <div class="rate-stars" role="radiogroup" aria-label="Rate the transporter from 1 to 5 stars">${[1, 2, 3, 4, 5].map(star).join('')}</div>
+            </div>`;
+    },
     // Only jobs that came from a customer have one; jobs the admin posted directly show nothing
     customerLine(job) {
         const c = job && job.customers;
@@ -411,7 +436,9 @@ const app = {
     histCounts: { admin: {} },  // admin History: archived jobs per delivery month
     histReq: 0,              // newest admin History request (drops answers that arrive late)
     myHistoryBids: [],
-    tpData: null,            // Transporters tab: loaded bids, transporters and cancellations
+    tpData: null,            // Transporters tab: loaded bids, transporters, cancellations and ratings
+    ratingBusy: null,        // customer: id of the order whose rating is being saved (blocks a second tap meanwhile)
+    noRatings: false,        // set when the job_ratings table is not in Supabase yet (the rating box is then hidden)
     tpMonth: '',             // Transporters tab: chosen month ('' = not chosen yet, 'all' = all time)
 
     async init() {
@@ -923,6 +950,7 @@ const app = {
             
         if (error) { console.error(error); if (!silent) rtJobsContainer.innerHTML = ui.errorBlock('Check your connection and try again.'); return; }
         await this.attachJobDocs(jobs);
+        await this.attachJobRatings(jobs);
         if (silent && !this.viewIs('rtHome', 'rtRequests')) return;
         const all = jobs || [];
         const requests = all.filter(j => j.status === 'pending_review');
@@ -997,6 +1025,7 @@ const app = {
 
         const jobs = jobsRes.data || [];
         await this.attachJobDocs(jobs);
+        await this.attachJobRatings(jobs);
         if (req !== this.histReq) return;
 
         if (silent && !this.viewIs('rtHistory')) return;
@@ -1047,6 +1076,7 @@ const app = {
                     ${ui.doSlip(job, { download: true })}
                     ${ui.poSlip(job, { download: true })}
                     ${ui.invSlip(job, { download: true })}
+                    ${ui.ratingLine(job)}
                     <div class="job-foot">
                         ${ui.price(priceLabel, price)}
                         <div class="actions">
@@ -2089,6 +2119,69 @@ const app = {
         return jobs;
     },
 
+    // Adds job.customer_rating ({ rating, created_at } or null) to each job, from the job_ratings table
+    // (one row per job). Row-level security decides what comes back: a customer only gets their own, the admin
+    // gets all, transporters get none. If the table is not there yet the jobs still show, just without ratings.
+    async attachJobRatings(jobs) {
+        if (!jobs || !jobs.length || this.noRatings) return jobs;
+        const { data, error } = await this.fetchAllRows(() => supabaseClient
+            .from('job_ratings')
+            .select('job_id, rating, created_at')
+            .order('created_at', { ascending: false }));
+        if (error) {
+            console.error('Ratings load error:', error);
+            if (/does not exist|schema cache|relation/i.test(error.message || '')) this.noRatings = true; // stop asking until the page is reloaded
+            return jobs;
+        }
+        const byJob = new Map((data || []).map(r => [String(r.job_id), r]));
+        jobs.forEach(x => {
+            const r = byJob.get(String(x.id));
+            x.customer_rating = r ? { rating: Number(r.rating), created_at: r.created_at } : null;
+        });
+        return jobs;
+    },
+
+    // ==========================================
+    // --- CUSTOMER: rate the transporter (optional, after delivery) ---
+    // One tap on a star saves the rating. The customer never sees who the transporter is:
+    // the database works that out from the awarded bid.
+    // ==========================================
+    // Redraws just the rating box of one order (not the whole list), so scrolling is not disturbed
+    redrawRating(jobId) {
+        const id = String(jobId);
+        const job = this.customerJobsById(id);
+        if (!job) return;
+        [...document.querySelectorAll('.rate-box')].filter(el => el.dataset.job === id).forEach(el => {
+            const tpl = document.createElement('template');
+            tpl.innerHTML = ui.ratingBox(job).trim();
+            el.replaceWith(tpl.content.firstElementChild);
+        });
+    },
+
+    async rate(jobId, n) {
+        const id = String(jobId);
+        const job = this.customerJobsById(id);
+        const stars = Math.max(1, Math.min(5, Number(n) || 0));
+        if (!job || this.ratingBusy) return;
+        const before = job.customer_rating;
+        if (before && before.rating === stars) return; // same star again: nothing to save
+        this.ratingBusy = id;
+        job.customer_rating = { rating: stars, created_at: new Date().toISOString() }; // show it at once
+        this.redrawRating(id);
+        const { error } = await supabaseClient.rpc('rate_transporter', { p_job_id: id, p_rating: stars });
+        this.ratingBusy = null;
+        if (error) {
+            console.error(error);
+            job.customer_rating = before; // put the old rating back
+            this.redrawRating(id);
+            ui.notify('Could not save your rating: ' + error.message);
+            return;
+        }
+        this.redrawRating(id);
+        ui.notify(before ? 'Rating updated' : 'Thank you! Your rating has been submitted');
+        this.fetchCustomerJobs(true); // quietly sync with the database
+    },
+
     extractJobId(data) {
         if (typeof data === 'string') return data;
         if (Array.isArray(data)) data = data[0];
@@ -2113,6 +2206,7 @@ const app = {
         }
         await this.attachJobDocs(jobs);
         await this.attachJobExtras(jobs);
+        await this.attachJobRatings(jobs);
         if (silent && !this.viewIs('customerHome', 'customerHistory')) return;
         // jobs the admin removed (archived) are not shown to customers
         const visible = (jobs || []).filter(j => j.status !== 'archived');
@@ -2231,6 +2325,7 @@ const app = {
                     ${ui.doSlip(job, { showTime: true, timeLabel: 'Delivered' })}
                     ${ui.poSlip(job, { title: 'Your PO', upload: stage === 'delivered' })}
                     ${ui.invSlip(job, { download: true })}
+                    ${stage === 'delivered' ? ui.ratingBox(job) : ''}
                     ${foot}
                 </article>
             `;
@@ -2284,6 +2379,7 @@ const app = {
                     ${ui.doSlip(job, { showTime: true, timeLabel: 'Delivered', download: true })}
                     ${ui.poSlip(job)}
                     ${ui.invSlip(job, { download: true })}
+                    ${delivered ? ui.ratingBox(job) : ''}
                     <div class="job-foot">
                         ${price}
                         ${again ? `<div class="actions">${again}</div>` : ''}
@@ -2691,6 +2787,7 @@ const app = {
                     ${ui.facts(job, { date: job.delivery_date, delivered: isAssigned && !!job.do_url })}
                     ${ui.poSlip(job, { download: true })}
                     ${ui.invSlip(job, { download: true, upload: isAssigned && !!job.do_url })}
+                    ${ui.ratingLine(job)}
                     <div class="job-foot">
                         ${ui.price('Budget', job.offered_price)}
                         <div class="actions">
@@ -2871,10 +2968,11 @@ const app = {
         const container = document.getElementById('rt-transporters-container');
         if (!silent) container.innerHTML = ui.skeleton(3, 220);
 
-        const [bidsRes, tpRes, cancelRes] = await Promise.all([
+        const [bidsRes, tpRes, cancelRes, ratingsRes] = await Promise.all([
             this.fetchAllRows(() => supabaseClient.from('bids').select('*, jobs(*)').order('created_at', { ascending: false })),
             supabaseClient.from('transporters').select('id, company_name, contact_person, phone, banned_until, last_active_at'),
-            supabaseClient.from('job_cancellations').select('job_id, transporter_id, delivery_date, cancelled_at')
+            supabaseClient.from('job_cancellations').select('job_id, transporter_id, delivery_date, cancelled_at'),
+            this.fetchAllRows(() => supabaseClient.from('job_ratings').select('job_id, transporter_id, rating, created_at').order('created_at', { ascending: false }))
         ]);
 
         if (bidsRes.error) {
@@ -2884,13 +2982,16 @@ const app = {
         }
         if (tpRes.error) console.error('Could not load transporters:', tpRes.error);
         if (cancelRes.error) console.warn('Cancellations not available:', cancelRes.error.message);
+        if (ratingsRes.error) console.warn('Ratings not available:', ratingsRes.error.message);
 
         if (silent && !this.viewIs('rtTransporters')) return;
         const data = {
             bids: (bidsRes.data || []).filter(b => b.jobs),
             transporters: tpRes.data || [],
             cancels: cancelRes.error ? [] : (cancelRes.data || []),
-            cancelOk: !cancelRes.error
+            cancelOk: !cancelRes.error,
+            ratings: ratingsRes.error ? [] : (ratingsRes.data || []),
+            ratingsOk: !ratingsRes.error
         };
         const sig = JSON.stringify(data);
         if (silent && sig === this.lastSig.transporters) return;
@@ -2963,7 +3064,8 @@ const app = {
         const get = (id) => stats[id] || (stats[id] = {
             bids: 0, quick: 0, counter: 0,
             awarded: 0, delivered: 0, onTime: 0, late: 0, overdue: 0, inProgress: 0, cancelled: 0,
-            atBudget: 0, viaCounter: 0, diffSum: 0, places: {}
+            atBudget: 0, viaCounter: 0, diffSum: 0, places: {},
+            ratingSum: 0, ratingCount: 0
         });
 
         d.bids.forEach(b => {
@@ -3010,6 +3112,17 @@ const app = {
             if (inMonth(this.monthKey(c.delivery_date))) get(c.transporter_id).cancelled++;
         });
 
+        // Customer ratings count in the delivery month of the job they belong to (newest first, as loaded)
+        const bidFor = new Map(d.bids.map(b => [`${b.job_id}|${b.transporter_id}`, b]));
+        d.ratings.forEach(r => {
+            const b = bidFor.get(`${r.job_id}|${r.transporter_id}`);
+            const k = b ? monthOfBid(b) : this.monthKey(this.myDay(r.created_at));
+            if (!inMonth(k)) return;
+            const s = get(r.transporter_id);
+            s.ratingSum += Number(r.rating);
+            s.ratingCount++;
+        });
+
         const profiles = new Map(d.transporters.map(t => [String(t.id), t]));
         const q = (document.getElementById('tp-search')?.value || '').trim().toLowerCase();
         const rows = Object.keys(stats)
@@ -3022,8 +3135,10 @@ const app = {
         const count = document.getElementById('tp-count');
         if (count) count.textContent = rows.length ? `${rows.length} transporter${rows.length === 1 ? '' : 's'}` : '';
 
-        const note = d.cancelOk ? '' :
-            `<div class="notice notice-warn"><i class="ri-information-line"></i><span>"Taken back" is not being recorded yet. The job_cancellations table is missing in Supabase.</span></div>`;
+        const note = (d.cancelOk ? '' :
+            `<div class="notice notice-warn"><i class="ri-information-line"></i><span>"Taken back" is not being recorded yet. The job_cancellations table is missing in Supabase.</span></div>`) +
+            (d.ratingsOk ? '' :
+            `<div class="notice notice-warn"><i class="ri-information-line"></i><span>Customer ratings could not be loaded. Is the job_ratings table created in Supabase?</span></div>`);
 
         if (!rows.length) {
             container.innerHTML = note + ui.empty('ri-truck-line', 'No transporter activity',
@@ -3043,9 +3158,11 @@ const app = {
 
             const timed = s.onTime + s.late;
             const rate = timed ? Math.round(s.onTime / timed * 100) : null;
+            const avgRating = s.ratingCount ? s.ratingSum / s.ratingCount : 0;
             const pills = [];
             if (banned) pills.push(ui.pill('Suspended', 'stop', 'ri-lock-line'));
             if (rate !== null) pills.push(ui.pill(`${rate}% on time`, rate >= 90 ? 'go' : (rate >= 70 ? 'warn' : 'stop')));
+            if (s.ratingCount) pills.push(ui.pill(`${avgRating.toFixed(1)} (${s.ratingCount})`, avgRating >= 4.5 ? 'go' : (avgRating >= 3.5 ? 'warn' : 'stop'), 'ri-star-fill'));
             if (s.bids >= 3 && s.counter / s.bids >= 0.6) pills.push(ui.pill('Mostly counter-offers', 'warn'));
             else if (s.bids >= 3 && s.quick / s.bids >= 0.8) pills.push(ui.pill('Usually accepts our price', 'go'));
 
@@ -3054,6 +3171,12 @@ const app = {
                 : Math.abs(avg) < 0.005 ? ui.pill('Paid at budget', 'neutral')
                 : avg > 0 ? ui.pill(`Avg RM ${ui.money(avg)} above budget`, 'warn')
                 : ui.pill(`Avg RM ${ui.money(Math.abs(avg))} below budget`, 'go');
+
+            // Customer ratings: the average, shown as stars
+            const ratingHtml = s.ratingCount
+                ? `<div class="remarks"><b>Customer ratings</b>
+                        <div class="tp-line">${ui.stars(avgRating)}<span>${avgRating.toFixed(1)} out of 5 from ${plural(s.ratingCount, 'rating')}</span></div></div>`
+                : '';
 
             const places = Object.values(s.places).sort((x, y) => y.n - x.n || x.label.localeCompare(y.label)).slice(0, 4);
             const placesHtml = places.length
@@ -3094,6 +3217,7 @@ const app = {
                         <b>Common areas</b>
                         <div class="tp-line">${placesHtml}</div>
                     </div>
+                    ${ratingHtml}
                 </article>
             `;
         }).join('');
