@@ -2745,7 +2745,7 @@ const app = {
     // ==========================================
     // --- ADMIN: TRANSPORTERS TAB ---
     // Per transporter, for one delivery month: jobs awarded, delivered, on time / late / overdue,
-    // cancellations, how they price (our price vs counter-offers) and where they usually go.
+    // jobs the admin took back (Undo), how they price (our price vs counter-offers) and where they usually go.
     // ==========================================
     showRtTransporters() {
         ui.setTab('transporters');
@@ -2909,7 +2909,7 @@ const app = {
         if (count) count.textContent = rows.length ? `${rows.length} transporter${rows.length === 1 ? '' : 's'}` : '';
 
         const note = d.cancelOk ? '' :
-            `<div class="notice notice-warn"><i class="ri-information-line"></i><span>Cancellations are not being recorded yet. The job_cancellations table is missing in Supabase.</span></div>`;
+            `<div class="notice notice-warn"><i class="ri-information-line"></i><span>"Taken back" is not being recorded yet. The job_cancellations table is missing in Supabase.</span></div>`;
 
         if (!rows.length) {
             container.innerHTML = note + ui.empty('ri-truck-line', 'No transporter activity',
@@ -2962,7 +2962,7 @@ const app = {
                         ${box(s.awarded, 'Awarded')}
                         ${box(s.delivered, 'Delivered', s.delivered ? 'ok' : '')}
                         ${box(s.inProgress, 'In progress')}
-                        ${d.cancelOk ? box(s.cancelled, 'Cancelled', s.cancelled ? 'stop' : '') : box('&ndash;', 'Cancelled')}
+                        ${d.cancelOk ? box(s.cancelled, 'Taken back', s.cancelled ? 'stop' : '') : box('&ndash;', 'Taken back')}
                         ${box(s.onTime, 'On time', s.onTime ? 'ok' : '')}
                         ${box(s.late, 'Late', s.late ? 'warn' : '')}
                         ${box(s.overdue, 'Overdue', s.overdue ? 'stop' : '')}
