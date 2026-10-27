@@ -537,17 +537,14 @@ input[type="file"]::file-selector-button {
     display: flex; align-items: flex-start; gap: 10px;
     width: 100%; max-width: 420px;
     padding: 12px 14px;
-    background: var(--ink);
+    background: var(--go);
     color: #fff;
     border-radius: 10px;
-    box-shadow: 0 10px 30px -8px rgba(0, 0, 0, .4);
+    box-shadow: 0 10px 30px -8px rgba(15, 77, 47, .55);
     font-size: .875rem;
-    border-left: 4px solid var(--info);
     animation: toast-in .18s ease-out;
 }
 .toast i { font-size: 18px; margin-top: 1px; }
-.toast-success { border-left-color: #3ecf8e; }
-.toast-error { border-left-color: #ff7b72; }
 .toast.is-leaving { opacity: 0; transform: translateY(-6px); transition: opacity .2s, transform .2s; }
 @keyframes toast-in { from { opacity: 0; transform: translateY(-8px); } }
 
