@@ -6,8 +6,6 @@ const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZ
 
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 const RT_ADMIN_EMAIL = 'testing@gmail.com';
-// Company WhatsApp number shown to customers, e.g. '012-345 6789'. Leave '' to hide the WhatsApp buttons.
-const RT_WHATSAPP_NUMBER = '';
 
 // ==========================================
 // 2. UI ELEMENTS MAPPING
@@ -207,13 +205,6 @@ const ui = {
                 <img src="${this.esc(u)}" alt="Job photo ${n}" loading="lazy">
             </a>`).join('');
         return `<div class="photo-strip${small ? ' is-small' : ''}">${thumbs}</div>`;
-    },
-    // Malaysian numbers: 012-345 6789 -> https://wa.me/60123456789
-    waLink(phone) {
-        let d = String(phone || '').replace(/\D/g, '');
-        if (!d) return '';
-        if (d.startsWith('0')) d = '6' + d;
-        return 'https://wa.me/' + d;
     },
     isPdf(url) {
         return /\.pdf$/i.test(String(url || '').split(/[?#]/)[0]);
@@ -2233,17 +2224,13 @@ const app = {
         const base = this.customerJobs || [];
         const all = this.filterJobs(base, 'cust'); // delivery-date filter
         this.updateFilterUi('cust', all.length, base.length);
-        const waBase = ui.waLink(RT_WHATSAPP_NUMBER);
-        const help = waBase
-            ? `<p class="page-sub" style="text-align:center">Need help? <a href="${ui.esc(waBase)}" target="_blank" rel="noopener noreferrer"><i class="ri-whatsapp-line"></i> WhatsApp us</a></p>`
-            : '';
 
         if (base.length === 0) {
-            container.innerHTML = ui.empty('ri-file-list-3-line', 'No orders yet', 'Tap New order to place your first delivery order.') + help;
+            container.innerHTML = ui.empty('ri-file-list-3-line', 'No orders yet', 'Tap New order to place your first delivery order.');
             return;
         }
         if (all.length === 0) {
-            container.innerHTML = ui.empty('ri-search-line', 'No orders on these dates', 'Try a different date range.') + help;
+            container.innerHTML = ui.empty('ri-search-line', 'No orders on these dates', 'Try a different date range.');
             return;
         }
 
@@ -2259,7 +2246,7 @@ const app = {
 
         const shown = active === 'all' ? all : all.filter(j => this.customerStage(j) === active);
         if (shown.length === 0) {
-            container.innerHTML = chips + ui.empty('ri-file-list-3-line', 'Nothing here', 'No orders in this status.') + help;
+            container.innerHTML = chips + ui.empty('ri-file-list-3-line', 'Nothing here', 'No orders in this status.');
             return;
         }
 
@@ -2280,10 +2267,6 @@ const app = {
             }
             if (stage === 'delivered') {
                 actions.push(`<button class="btn btn-secondary btn-sm" data-id="${id}" onclick="app.openCustomerCopy(this.dataset.id)"><i class="ri-repeat-line"></i> Book again</button>`);
-            }
-            if (waBase) {
-                const msg = `Hi, I'd like to ask about my order: ${job.source_loc} to ${job.dest_loc}, delivery ${job.delivery_date}.`;
-                actions.push(`<a class="btn btn-secondary btn-sm" href="${ui.esc(waBase + '?text=' + encodeURIComponent(msg))}" target="_blank" rel="noopener noreferrer"><i class="ri-whatsapp-line"></i> WhatsApp us</a>`);
             }
             const price = job.customer_expected_price != null ? ui.price('Your expected price', job.customer_expected_price) : '<span></span>';
             const foot = (job.customer_expected_price != null || actions.length)
@@ -2310,7 +2293,7 @@ const app = {
             `;
         }).join('');
 
-        container.innerHTML = chips + cards + help;
+        container.innerHTML = chips + cards;
     },
 
     // ==========================================
@@ -2391,7 +2374,7 @@ const app = {
 
         await this.attachJobDocs([job]);
         const c = job.customers || {};
-        const wa = ui.waLink(c.phone);
+        const tel = String(c.phone || '').replace(/[^\d+]/g, '');
         const expected = Number(job.customer_expected_price) || 0;
 
         container.innerHTML = `
@@ -2403,7 +2386,7 @@ const app = {
                 <p class="remarks">
                     <b>${ui.esc(c.company_name || 'Unknown customer')}</b><br>
                     ${ui.esc(c.contact_person || '')}
-                    ${wa ? ` &middot; <a href="${ui.esc(wa)}" target="_blank" rel="noopener noreferrer"><i class="ri-whatsapp-line"></i> ${ui.esc(c.phone)}</a>` : ''}
+                    ${c.phone ? ` &middot; ${tel ? `<a href="tel:${ui.esc(tel)}"><i class="ri-phone-line"></i> ${ui.esc(c.phone)}</a>` : ui.esc(c.phone)}` : ''}
                 </p>
                 ${ui.route(job)}
                 ${ui.facts(job, { date: job.delivery_date })}
