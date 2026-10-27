@@ -545,6 +545,7 @@ input[type="file"]::file-selector-button {
     animation: toast-in .18s ease-out;
 }
 .toast i { font-size: 18px; margin-top: 1px; }
+.toast-error { background: var(--stop); box-shadow: 0 10px 30px -8px rgba(122, 26, 20, .55); }
 .toast.is-leaving { opacity: 0; transform: translateY(-6px); transition: opacity .2s, transform .2s; }
 @keyframes toast-in { from { opacity: 0; transform: translateY(-8px); } }
 
