@@ -3177,7 +3177,7 @@ const app = {
         const stats = {};
         const get = (id) => stats[id] || (stats[id] = {
             bids: 0, quick: 0, counter: 0,
-            awarded: 0, delivered: 0, onTime: 0, late: 0, overdue: 0, inProgress: 0, cancelled: 0, missed: 0,
+            awarded: 0, delivered: 0, onTime: 0, late: 0, overdue: 0, inProgress: 0, cancelled: 0,
             atBudget: 0, viaCounter: 0, diffSum: 0, places: {},
             ratingSum: 0, ratingCount: 0
         });
@@ -3222,15 +3222,24 @@ const app = {
             });
         });
 
-        // A job that was taken back from a transporter counts against their on-time rate: they were awarded it and
-        // it was not delivered by them. (Unless the same job was later awarded to them again: then it is counted
-        // once, through its delivery, so it is not held against them twice.)
-        const holding = new Set(d.bids.filter(b => b.status === 'accepted').map(b => `${b.job_id}|${b.transporter_id}`));
+        // Every time a job was taken back from a transporter counts against their on-time rate
+        // (the number in the "Taken back" box is exactly the number held against them).
+        // Exception: an accidental Undo. If the same job was given back to the same transporter within
+        // UNDO_GRACE_MIN minutes of being taken back, it is not counted at all.
+        const UNDO_GRACE_MIN = 10;
+        const reAwardedAt = new Map(); // "job|transporter" -> when the job was awarded to them (latest)
+        d.bids.forEach(b => {
+            if (b.status !== 'accepted' || !b.jobs.assigned_at) return;
+            const key = `${b.job_id}|${b.transporter_id}`;
+            const t = new Date(b.jobs.assigned_at).getTime();
+            if (!(reAwardedAt.get(key) >= t)) reAwardedAt.set(key, t);
+        });
         d.cancels.forEach(c => {
             if (!inMonth(this.monthKey(c.delivery_date))) return;
-            const s = get(c.transporter_id);
-            s.cancelled++;
-            if (!holding.has(`${c.job_id}|${c.transporter_id}`)) s.missed++;
+            const gone = new Date(c.cancelled_at).getTime();
+            const back = reAwardedAt.get(`${c.job_id}|${c.transporter_id}`);
+            if (back !== undefined && !isNaN(gone) && back >= gone && back - gone <= UNDO_GRACE_MIN * 60000) return;
+            get(c.transporter_id).cancelled++;
         });
 
         // Customer ratings count in the delivery month of the job they belong to
@@ -3277,7 +3286,7 @@ const app = {
                 : '';
             const banned = p.banned_until && new Date(p.banned_until).getTime() > Date.now();
 
-            const timed = s.onTime + s.late + s.missed;
+            const timed = s.onTime + s.late + s.cancelled;
             const rate = timed ? Math.round(s.onTime / timed * 100) : null;
             const avgRating = s.ratingCount ? s.ratingSum / s.ratingCount : 0;
             const pills = [];
