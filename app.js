@@ -3279,7 +3279,7 @@ const app = {
         const box = (value, label, tone = '') => `<div class="tp-stat${tone ? ' is-' + tone : ''}"><b>${value}</b><span>${label}</span></div>`;
         const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
-        container.innerHTML = note + rows.map(({ s, p }) => {
+        container.innerHTML = note + rows.map(({ id, s, p }) => {
             const tel = String(p.phone || '').replace(/[^\d+]/g, '');
             const phoneHtml = p.phone
                 ? (tel ? `<a href="tel:${ui.esc(tel)}"><i class="ri-phone-line"></i>${ui.esc(p.phone)}</a>` : `<span><i class="ri-phone-line"></i>${ui.esc(p.phone)}</span>`)
@@ -3308,6 +3308,14 @@ const app = {
                         <div class="tp-line">${ui.stars(avgRating)}<span>${avgRating.toFixed(1)} out of 5 from ${plural(s.ratingCount, 'rating')}</span></div></div>`
                 : '';
 
+            // One line that stays visible when the card is folded: the numbers you check first
+            const sumBits = [`<b>${s.awarded}</b> awarded`, `<b>${s.delivered}</b> delivered`];
+            if (s.inProgress) sumBits.push(`<b>${s.inProgress}</b> in progress`);
+            if (d.cancelOk && s.cancelled) sumBits.push(`<span class="tp-bad"><b>${s.cancelled}</b> taken back</span>`);
+            if (s.late) sumBits.push(`<span class="tp-warn"><b>${s.late}</b> late</span>`);
+            if (s.overdue) sumBits.push(`<span class="tp-bad"><b>${s.overdue}</b> overdue</span>`);
+            const summary = sumBits.join(' &middot; ');
+
             const places = Object.values(s.places).sort((x, y) => y.n - x.n || x.label.localeCompare(y.label)).slice(0, 4);
             const placesHtml = places.length
                 ? places.map(x => `${ui.esc(x.label)} <span class="hint">&times;${x.n}</span>`).join(' &middot; ')
@@ -3326,28 +3334,31 @@ const app = {
                         </div>
                         <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">${pills.join('')}</div>
                     </div>
-                    <div class="tp-stats">
-                        ${box(s.awarded, 'Awarded')}
-                        ${box(s.delivered, 'Delivered', s.delivered ? 'ok' : '')}
-                        ${box(s.inProgress, 'In progress')}
-                        ${d.cancelOk ? box(s.cancelled, 'Taken back', s.cancelled ? 'stop' : '') : box('&ndash;', 'Taken back')}
-                        ${box(s.onTime, 'On time', s.onTime ? 'ok' : '')}
-                        ${box(s.late, 'Late', s.late ? 'warn' : '')}
-                        ${box(s.overdue, 'Overdue', s.overdue ? 'stop' : '')}
-                        ${box(rate === null ? '&ndash;' : rate + '%', 'On-time rate')}
-                    </div>
-                    <div class="remarks">
-                        <b>Pricing</b>
-                        <div class="tp-line">
-                            <span>${plural(s.bids, 'bid')}: ${s.quick} at our price, ${s.counter} counter-offer${s.counter === 1 ? '' : 's'}</span>
-                        </div>
-                        ${s.awarded ? `<div class="tp-line"><span>Awarded: ${s.atBudget} at our price, ${s.viaCounter} after counter-offer</span>${avgPill}</div>` : ''}
-                    </div>
-                    <div class="remarks">
-                        <b>Common areas</b>
-                        <div class="tp-line">${placesHtml}</div>
-                    </div>
-                    ${ratingHtml}
+                    <p class="tp-summary">${summary}</p>
+                    ${ui.fold('tp-' + id, [
+                        { label: 'Stats', html: `<div class="tp-stats">
+                            ${box(s.awarded, 'Awarded')}
+                            ${box(s.delivered, 'Delivered', s.delivered ? 'ok' : '')}
+                            ${box(s.inProgress, 'In progress')}
+                            ${d.cancelOk ? box(s.cancelled, 'Taken back', s.cancelled ? 'stop' : '') : box('&ndash;', 'Taken back')}
+                            ${box(s.onTime, 'On time', s.onTime ? 'ok' : '')}
+                            ${box(s.late, 'Late', s.late ? 'warn' : '')}
+                            ${box(s.overdue, 'Overdue', s.overdue ? 'stop' : '')}
+                            ${box(rate === null ? '&ndash;' : rate + '%', 'On-time rate')}
+                        </div>` },
+                        { label: 'Pricing', html: `<div class="remarks">
+                            <b>Pricing</b>
+                            <div class="tp-line">
+                                <span>${plural(s.bids, 'bid')}: ${s.quick} at our price, ${s.counter} counter-offer${s.counter === 1 ? '' : 's'}</span>
+                            </div>
+                            ${s.awarded ? `<div class="tp-line"><span>Awarded: ${s.atBudget} at our price, ${s.viaCounter} after counter-offer</span>${avgPill}</div>` : ''}
+                        </div>` },
+                        { label: 'Common areas', html: `<div class="remarks">
+                            <b>Common areas</b>
+                            <div class="tp-line">${placesHtml}</div>
+                        </div>` },
+                        { label: 'Ratings', html: ratingHtml }
+                    ])}
                 </article>
             `;
         }).join('');
