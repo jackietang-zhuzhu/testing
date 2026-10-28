@@ -695,3 +695,27 @@ input[type="file"]::file-selector-button {
 .rate-star:focus-visible { outline: 2px solid var(--info); outline-offset: 2px; }
 .stars { display: inline-flex; gap: 1px; vertical-align: middle; color: var(--road); font-size: 1rem; }
 .stars .ri-star-line { color: var(--line-strong); }
+
+/* ---------- Customer cards: photos, remarks and documents fold away ---------- */
+.more { border-top: 1px solid var(--line); margin: 0 -16px -2px; padding: 0 16px; }
+.more > summary {
+    list-style: none;
+    display: flex; align-items: center; gap: 10px;
+    min-height: 44px; padding: 6px 0;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+.more > summary::-webkit-details-marker { display: none; }
+.more > summary::after {
+    content: "";
+    flex-shrink: 0;
+    width: 8px; height: 8px; margin: 0 4px 3px auto;
+    border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted);
+    transform: rotate(45deg);
+    transition: transform .15s;
+}
+.more[open] > summary::after { transform: rotate(-135deg); margin-bottom: -3px; }
+.more-title { font-size: .8125rem; font-weight: 600; color: var(--ink-2); }
+.more-list { font-size: .75rem; color: var(--muted); min-width: 0; overflow-wrap: anywhere; }
+.more-body { display: flex; flex-direction: column; gap: 12px; padding: 4px 0 6px; }
+@media (prefers-reduced-motion: reduce) { .more > summary::after { transition: none; } }
