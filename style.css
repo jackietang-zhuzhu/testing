@@ -719,3 +719,9 @@ input[type="file"]::file-selector-button {
 .more-list { font-size: .75rem; color: var(--muted); min-width: 0; overflow-wrap: anywhere; }
 .more-body { display: flex; flex-direction: column; gap: 12px; padding: 4px 0 6px; }
 @media (prefers-reduced-motion: reduce) { .more > summary::after { transition: none; } }
+
+/* ---------- Admin: transporter card summary line (stays visible when the card is folded) ---------- */
+.tp-summary { font-size: .875rem; color: var(--ink-2); overflow-wrap: anywhere; }
+.tp-summary b { font-weight: 700; color: var(--ink); font-variant-numeric: tabular-nums; }
+.tp-summary .tp-bad, .tp-summary .tp-bad b { color: var(--stop-ink); }
+.tp-summary .tp-warn, .tp-summary .tp-warn b { color: var(--road-ink); }
