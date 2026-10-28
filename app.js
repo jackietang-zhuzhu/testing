@@ -376,6 +376,19 @@ const ui = {
                 <div class="rate-stars" role="radiogroup" aria-label="Rate the transporter from 1 to 5 stars">${[1, 2, 3, 4, 5].map(star).join('')}</div>
             </div>`;
     },
+    // Customer cards: photos, remarks and documents sit in a fold-out so the card stays short. Always visible are
+    // the status, route, load, price and buttons. parts = [{ label, html }], empty ones are skipped. The fold opens
+    // by itself only when wantOpen is true (the customer has something to do), and then remembers what the person chose.
+    fold(id, parts, wantOpen = false) {
+        const list = parts.filter(p => p && p.html);
+        if (!list.length) return '';
+        const saved = app.cardOpen[id];
+        const open = saved === undefined ? wantOpen : saved;
+        return `<details class="more" data-id="${this.esc(id)}"${open ? ' open' : ''} ontoggle="app.rememberFold(this)">
+            <summary><span class="more-title">Details</span><span class="more-list">${list.map(p => this.esc(p.label)).join(' · ')}</span></summary>
+            <div class="more-body">${list.map(p => p.html).join('')}</div>
+        </details>`;
+    },
     // Only jobs that came from a customer have one; jobs the admin posted directly show nothing
     customerLine(job) {
         const c = job && job.customers;
@@ -414,6 +427,7 @@ const app = {
     knownStages: null,
     currentBidsJobId: null,
     uploading: 0,
+    cardOpen: {},            // customer cards: which "Details" folds the person opened or closed
     factory: null,           // customer's saved pickup {loc, link}, or null
     editingHadStops: false,
     submittingOrder: false,
@@ -567,6 +581,7 @@ const app = {
         this.knownJobIds = null;
         this.knownStages = null;
         this.currentBidsJobId = null;
+        this.cardOpen = {};
         this.rtMonth = '';
         this.histMonth = { admin: '', customer: '', transporter: '' };
         this.histCounts = { admin: {} };
@@ -2054,21 +2069,19 @@ const app = {
             return;
         }
 
-        // Extra drop-offs are saved in a second step, so the existing submit/update functions stay untouched.
-        // It is skipped entirely when not used. (For an edited order that used to have them,
-        // an empty list is sent so they get cleared.)
+        // Extra drop-offs and contacts are saved in follow-up steps, so the existing submit/update functions stay untouched.
+        // Each is skipped when not used. (For an edited order that used to have them, an empty value is sent so they get cleared.)
         let jobId = editing ? editedJobId : this.extractJobId(rpcData);
         const contacts = this.collectContacts('cj');
         const needFollowUp = !!(extraStops.length || this.editingHadStops || contacts || this.editingHadContacts);
         if (!jobId && needFollowUp) {
-            // submit_customer_job did not return the id: look up our newest order once, and then use that
-            // explicit id for both steps, instead of letting each step guess "my newest request" on its own.
+            // submit_customer_job did not return the id: look up our newest order once and use that explicit id
+            // for both steps, instead of letting each step guess "my newest request" on its own.
             const { data: newest } = await supabaseClient
                 .from('customer_jobs').select('id').order('created_at', { ascending: false }).order('id').limit(1);
             jobId = (newest && newest[0] && newest[0].id) || null;
         }
-        // The follow-up steps are retried a couple of times before we give up (they are not part of the same
-        // database transaction as the order itself; see the note in the summary for the proper fix).
+        // The follow-up steps are retried a couple of times before we give up.
         const withRetry = async (fn) => {
             let res;
             for (let attempt = 0; attempt < 3; attempt++) {
@@ -2083,8 +2096,6 @@ const app = {
             const { error: stopsError } = await withRetry(() => supabaseClient.rpc('set_my_job_stops', { p_stops: extraStops, p_job_id: jobId }));
             if (stopsError) { console.error(stopsError); failed.push('the extra drop-offs'); }
         }
-
-        // Same for the contacts (person in charge + phone): their own step, and skipped when there is nothing to save or clear
         if (contacts || this.editingHadContacts) {
             const { error: contactsError } = await withRetry(() => supabaseClient.rpc('set_my_job_contacts', { p_contacts: contacts, p_job_id: jobId }));
             if (contactsError) { console.error(contactsError); failed.push('the contact details'); }
@@ -2414,12 +2425,14 @@ const app = {
                     ${this.customerSteps(stage, job)}
                     ${ui.route(job)}
                     ${ui.facts(job, { date: job.delivery_date })}
-                    ${ui.photos(job, true)}
-                    ${ui.remarks(job.remarks)}
-                    ${ui.doSlip(job, { showTime: true, timeLabel: 'Delivered' })}
-                    ${ui.poSlip(job, { title: 'Your PO', upload: stage === 'delivered' })}
-                    ${ui.invSlip(job, { download: true })}
-                    ${stage === 'delivered' ? ui.ratingBox(job) : ''}
+                    ${ui.fold(job.id, [
+                        { label: ([job.photo_1_url, job.photo_2_url].filter(u => app.safeUrl(u)).length) + ' photo' + ([job.photo_1_url, job.photo_2_url].filter(u => app.safeUrl(u)).length === 1 ? '' : 's'), html: ui.photos(job, true) },
+                        { label: 'Remarks', html: ui.remarks(job.remarks) },
+                        { label: 'DO', html: ui.doSlip(job, { showTime: true, timeLabel: 'Delivered' }) },
+                        { label: 'PO', html: ui.poSlip(job, { title: 'Your PO', upload: stage === 'delivered' }) },
+                        { label: 'INV', html: ui.invSlip(job, { download: true }) },
+                        { label: job.customer_rating ? 'Your rating' : 'Rate delivery', html: stage === 'delivered' ? ui.ratingBox(job) : '' }
+                    ], stage === 'delivered' && !job.customer_po)}
                     ${foot}
                 </article>
             `;
@@ -2468,12 +2481,14 @@ const app = {
                     </div>
                     ${ui.route(job)}
                     ${ui.facts(job, { date: job.delivery_date })}
-                    ${ui.photos(job, true)}
-                    ${ui.remarks(job.remarks)}
-                    ${ui.doSlip(job, { showTime: true, timeLabel: 'Delivered', download: true })}
-                    ${ui.poSlip(job)}
-                    ${ui.invSlip(job, { download: true })}
-                    ${delivered ? ui.ratingBox(job) : ''}
+                    ${ui.fold(job.id, [
+                        { label: ([job.photo_1_url, job.photo_2_url].filter(u => app.safeUrl(u)).length) + ' photo' + ([job.photo_1_url, job.photo_2_url].filter(u => app.safeUrl(u)).length === 1 ? '' : 's'), html: ui.photos(job, true) },
+                        { label: 'Remarks', html: ui.remarks(job.remarks) },
+                        { label: 'DO', html: ui.doSlip(job, { showTime: true, timeLabel: 'Delivered', download: true }) },
+                        { label: 'PO', html: ui.poSlip(job) },
+                        { label: 'INV', html: ui.invSlip(job, { download: true }) },
+                        { label: job.customer_rating ? 'Your rating' : 'Rate delivery', html: delivered ? ui.ratingBox(job) : '' }
+                    ])}
                     <div class="job-foot">
                         ${price}
                         ${again ? `<div class="actions">${again}</div>` : ''}
@@ -3045,6 +3060,10 @@ const app = {
         ui.setTab('transporters');
         this.showView('rtTransporters');
         this.fetchTransporterStats();
+    },
+
+    rememberFold(el) {
+        if (el && el.dataset) this.cardOpen[el.dataset.id] = el.open;
     },
 
     // Reads every row, 1000 at a time (the API returns at most 1000 per request)
