@@ -389,6 +389,24 @@ const ui = {
             <div class="more-body">${list.map(p => p.html).join('')}</div>
         </details>`;
     },
+    // Admin job cards: a short summary (route on one line, load and date) that opens to show everything.
+    // key identifies the card so the open/closed state survives the auto-refresh.
+    jobFold(key, job, bodyHtml, { delivered = false } = {}) {
+        const k = 'a-' + key;
+        const open = app.cardOpen[k] === true;
+        const extra = this.stops(job).length;
+        const route = `${this.esc(this.place(job.source_loc))} <span class="fold-arrow">&rarr;</span> ${this.esc(this.place(job.dest_loc))}${extra ? ` <span class="fold-more">+${extra} drop-off${extra === 1 ? '' : 's'}</span>` : ''}`;
+        const sub = [`${this.esc(job.quantity)} ${this.esc(job.item_desc)}`, job.delivery_date ? this.fmtDate(job.delivery_date) : ''].filter(Boolean).join(' · ');
+        return `<details class="fold" data-id="${this.esc(k)}"${open ? ' open' : ''} ontoggle="app.rememberFold(this)">
+            <summary>
+                <span class="fold-main">
+                    <span class="fold-route">${route}</span>
+                    <span class="fold-sub">${sub}${delivered ? ' <span class="fold-ok"><i class="ri-check-double-line"></i> Delivered</span>' : ''}</span>
+                </span>
+            </summary>
+            <div class="more-body">${bodyHtml}</div>
+        </details>`;
+    },
     // Only jobs that came from a customer have one; jobs the admin posted directly show nothing
     customerLine(job) {
         const c = job && job.customers;
@@ -2893,11 +2911,13 @@ const app = {
                         <span class="job-time">${ui.posted(job.created_at)}</span>
                     </div>
                     ${ui.customerLine(job)}
-                    ${ui.route(job)}
-                    ${ui.facts(job, { date: job.delivery_date, delivered: isAssigned && !!job.do_url })}
-                    ${ui.poSlip(job, { download: true })}
-                    ${ui.invSlip(job, { download: true, upload: isAssigned && !!job.do_url })}
-                    ${ui.ratingLine(job)}
+                    ${ui.jobFold(job.id, job, `
+                        ${ui.route(job)}
+                        ${ui.facts(job, { date: job.delivery_date, delivered: isAssigned && !!job.do_url })}
+                        ${ui.poSlip(job, { download: true })}
+                        ${ui.invSlip(job, { download: true, upload: isAssigned && !!job.do_url })}
+                        ${ui.ratingLine(job)}
+                    `, { delivered: isAssigned && !!job.do_url })}
                     <div class="job-foot">
                         ${ui.price('Budget', job.offered_price)}
                         <div class="actions">
