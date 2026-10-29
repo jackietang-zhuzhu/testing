@@ -735,3 +735,6 @@ input[type="file"]::file-selector-button {
 }
 .do-block.is-prominent > b,
 .do-block.is-prominent > div > b { font-size: .95rem; }
+
+/* Admin cards: the toggle sits right above the footer, so the footer does not need its own top line */
+.job-card > .card-more + .job-foot { border-top: 0; padding-top: 0; }
