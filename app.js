@@ -74,7 +74,7 @@ const ui = {
         let tone = 'info';
         if (/already/i.test(m)) tone = 'info';
         else if (/error|failed|invalid|cannot|could not|too large|suspended|blocked/i.test(m)) tone = 'error';
-        else if (/success|sent|posted|placed|published|awarded|accepted|submitted|removed|undone|uploaded|uploading|cancelled|updated|restored/i.test(m)) tone = 'success';
+        else if (/success|sent|posted|placed|published|awarded|accepted|submitted|removed|undone|uploaded|uploading|cancelled|updated|restored|rejected|deleted|resubmitted/i.test(m)) tone = 'success';
         this.toast(m, tone);
     },
 
@@ -455,6 +455,7 @@ const app = {
     uploading: 0,
     factory: null,           // customer's saved pickup {loc, link}, or null
     editingHadStops: false,
+    editingWasRejected: false, // the order being edited was rejected, so saving it resubmits it
     submittingOrder: false,
     confirmReturnFocus: null,
     MAX_EXTRA_STOPS: 4,      // so a job can have up to 5 drop-offs in total
@@ -993,7 +994,7 @@ const app = {
         this.lastSig.rt = sig;
         if (silent && prevIds && requests.some(j => !prevIds.has(j.id))) ui.notify('New customer request');
         this.updateRequestsBadge(requests.length);
-        this.renderRTJobs(all.filter(j => j.status !== 'pending_review'));
+        this.renderRTJobs(all.filter(j => j.status !== 'pending_review' && j.status !== 'rejected'));
         this.renderRTRequests(requests);
     },
 
@@ -1248,8 +1249,7 @@ const app = {
                     <div class="job-foot">
                         ${ui.price('Customer expected price', job.customer_expected_price)}
                         <div class="actions">
-                            <button class="btn btn-go btn-sm" data-id="${id}" onclick="app.openDraftReview(this.dataset.id)">Review &amp; post</button>
-                            <button class="btn btn-danger-ghost btn-sm btn-icon" data-id="${id}" onclick="app.deleteJob(this.dataset.id)" aria-label="Remove request" title="Remove request"><i class="ri-delete-bin-line"></i></button>
+                            <button class="btn btn-primary btn-sm" data-id="${id}" onclick="app.openDraftReview(this.dataset.id)">Review</button>
                         </div>
                     </div>
                 </article>`;
@@ -1806,15 +1806,16 @@ const app = {
         document.getElementById('customer-job-form').reset();
         this.resetStops('cj'); // form.reset() does not remove rows added with "Add another drop-off"
         this.editingJobId = mode === 'edit' ? job.id : null;
+        this.editingWasRejected = mode === 'edit' && job.status === 'rejected';
         this.editingHadStops = mode === 'edit' && ui.stops(job).length > 0;
         this.editingHadContacts = mode === 'edit' && ui.hasContacts(job);
         this.toggleCustomerOtherItem();
         document.getElementById('cj-date').min = new Date().toISOString().split('T')[0];
 
         document.getElementById('cj-title').textContent =
-            mode === 'edit' ? 'Edit order' : (mode === 'copy' ? 'Book again' : 'New order');
+            mode === 'edit' ? (this.editingWasRejected ? 'Edit & resubmit' : 'Edit order') : (mode === 'copy' ? 'Book again' : 'New order');
         document.getElementById('cj-submit').textContent =
-            mode === 'edit' ? 'Save changes' : 'Place order';
+            mode === 'edit' ? (this.editingWasRejected ? 'Resubmit order' : 'Save changes') : 'Place order';
         document.getElementById('cj-photo-hint').style.display = mode === 'edit' ? '' : 'none';
 
         if (job) this.fillCustomerForm(job, mode === 'edit');
@@ -1862,15 +1863,18 @@ const app = {
         }
     },
 
+    // Cancel an order that is waiting for approval, or delete one that was rejected.
     async cancelCustomerJob(jobId) {
-        if (!confirm("Cancel this order? This cannot be undone.")) return;
+        const job = this.customerJobsById(jobId);
+        const rejected = !!job && job.status === 'rejected';
+        if (!confirm(rejected ? "Delete this rejected order? This cannot be undone." : "Cancel this order? This cannot be undone.")) return;
         const { error } = await supabaseClient.rpc('cancel_customer_job', { p_job_id: jobId });
         if (error) {
             console.error(error);
-            ui.notify("Failed to cancel order: " + error.message);
+            ui.notify((rejected ? "Failed to delete order: " : "Failed to cancel order: ") + error.message);
             return;
         }
-        ui.notify("Order cancelled.");
+        ui.notify(rejected ? "Order deleted." : "Order cancelled.");
         this.fetchCustomerJobs();
     },
 
@@ -1930,7 +1934,7 @@ const app = {
 
         const editing = !!this.editingJobId;
         document.getElementById('confirm-body').innerHTML = rows.join('');
-        document.getElementById('cj-confirm-btn').textContent = editing ? 'Confirm changes' : 'Confirm order';
+        document.getElementById('cj-confirm-btn').textContent = editing ? (this.editingWasRejected ? 'Confirm & resubmit' : 'Confirm changes') : 'Confirm order';
         this.confirmReturnFocus = document.activeElement;
         document.getElementById('confirm-modal').classList.remove('hidden');
         document.getElementById('cj-confirm-btn').focus();
@@ -2021,9 +2025,10 @@ const app = {
         if (failed.length) {
             ui.notify(`Your order was placed, but ${failed.join(' and ')} could not be saved. Please tap Edit on the order and add ${failed.length > 1 ? 'them' : 'it'} again.`);
         } else {
-            ui.notify(editing ? "Changes saved. We will review your order shortly." : "Order placed. We will review it shortly.");
+            ui.notify(editing ? (this.editingWasRejected ? "Order resubmitted. We will review it shortly." : "Changes saved. We will review your order shortly.") : "Order placed. We will review it shortly.");
         }
         this.editingJobId = null;
+        this.editingWasRejected = false;
         this.editingHadStops = false;
         this.editingHadContacts = false;
         this.resetStops('cj');
@@ -2242,7 +2247,9 @@ const app = {
     },
 
     // review -> approved -> delivering (a transporter took the job) -> delivered (DO uploaded)
+    // rejected: the admin sent it back; the customer can edit and resubmit it, or delete it
     customerStage(job) {
+        if (job.status === 'rejected') return 'rejected';
         if (job.status === 'pending_review') return 'review';
         if (job.status === 'assigned') return job.do_url ? 'delivered' : 'delivering';
         return 'approved';
@@ -2257,6 +2264,12 @@ const app = {
             const t = i <= reached ? ui.fmtShort(times[i]) : '';
             return `<li class="step${i <= reached ? ' is-done' : ''}${i === reached ? ' is-current' : ''}"><span class="step-dot">${i <= reached ? '<i class="ri-check-line"></i>' : ''}</span><span class="step-label">${label}</span>${t ? `<span class="step-time">${t}</span>` : ''}</li>`;
         }).join('')}</ol>`;
+    },
+
+    // Shown on a rejected order: why it was sent back, and what the customer can do next
+    rejectNotice(job) {
+        const reason = job.reject_reason ? ' ' + ui.esc(job.reject_reason) : '';
+        return `<div class="notice notice-stop" role="alert"><i class="ri-close-circle-line"></i><span><b>Rejected.</b>${reason}<br><span class="hint">Edit the order and resubmit it, or delete it.</span></span></div>`;
     },
 
     setCustomerFilter(key) {
@@ -2280,7 +2293,7 @@ const app = {
             return;
         }
 
-        const filters = [['all', 'All'], ['review', 'Awaiting approval'], ['approved', 'Approved'], ['delivering', 'Delivering'], ['delivered', 'Delivered']];
+        const filters = [['all', 'All'], ['review', 'Awaiting approval'], ['rejected', 'Rejected'], ['approved', 'Approved'], ['delivering', 'Delivering'], ['delivered', 'Delivered']];
         const counts = { all: all.length };
         filters.slice(1).forEach(([key]) => { counts[key] = all.filter(j => this.customerStage(j) === key).length; });
         const active = (this.customerFilter && counts[this.customerFilter] !== undefined) ? this.customerFilter : 'all';
@@ -2301,6 +2314,7 @@ const app = {
             const id = ui.esc(job.id);
             const pill = {
                 review: ui.pill('Awaiting approval', 'warn', 'ri-time-line'),
+                rejected: ui.pill('Rejected', 'stop', 'ri-close-circle-line'),
                 approved: ui.pill('Approved', 'info', 'ri-megaphone-line'),
                 delivering: ui.pill('Delivering', 'info', 'ri-truck-line'),
                 delivered: ui.pill('Delivered', 'go', 'ri-check-double-line')
@@ -2310,6 +2324,10 @@ const app = {
             if (stage === 'review') {
                 actions.push(`<button class="btn btn-secondary btn-sm" data-id="${id}" onclick="app.openCustomerEdit(this.dataset.id)"><i class="ri-edit-line"></i> Edit</button>`);
                 actions.push(`<button class="btn btn-danger-ghost btn-sm" data-id="${id}" onclick="app.cancelCustomerJob(this.dataset.id)">Cancel order</button>`);
+            }
+            if (stage === 'rejected') {
+                actions.push(`<button class="btn btn-primary btn-sm" data-id="${id}" onclick="app.openCustomerEdit(this.dataset.id)"><i class="ri-edit-line"></i> Edit &amp; resubmit</button>`);
+                actions.push(`<button class="btn btn-danger-ghost btn-sm" data-id="${id}" onclick="app.cancelCustomerJob(this.dataset.id)">Delete</button>`);
             }
             if (stage === 'delivered') {
                 actions.push(`<button class="btn btn-secondary btn-sm" data-id="${id}" onclick="app.openCustomerCopy(this.dataset.id)"><i class="ri-repeat-line"></i> Book again</button>`);
@@ -2321,7 +2339,7 @@ const app = {
 
             // Collapsed / expanded. Every order starts collapsed ("Show more" to open).
             // After that we keep whatever the customer chose.
-            if (!(job.id in this.cardOpen)) this.cardOpen[job.id] = false;
+            if (!(job.id in this.cardOpen)) this.cardOpen[job.id] = (stage === 'rejected'); // a rejected order starts open so the reason is seen
             const open = this.cardOpen[job.id];
 
             // One-line summary shown only while the card is collapsed
@@ -2343,7 +2361,7 @@ const app = {
                         <div class="sum-meta">${sumMeta}</div>
                     </div>
                     <div class="job-body" id="jb-${id}">
-                        ${this.customerSteps(stage, job)}
+                        ${stage === 'rejected' ? this.rejectNotice(job) : this.customerSteps(stage, job)}
                         ${ui.route(job)}
                         ${ui.facts(job, { date: job.delivery_date })}
                         ${ui.photos(job, true)}
@@ -2625,7 +2643,20 @@ const app = {
                     </div>
                 </fieldset>
 
-                <button type="submit" class="btn btn-go btn-block">Approve &amp; post job</button>
+                <div class="actions-wide">
+                    <button type="submit" class="btn btn-go">Approve &amp; post job</button>
+                    <button type="button" id="rv-reject-toggle" class="btn btn-danger-outline" aria-expanded="false" aria-controls="rv-reject-panel" onclick="app.toggleRejectPanel()"><i class="ri-close-circle-line"></i> Reject</button>
+                </div>
+
+                <!-- Opens when Reject is pressed. The reason is optional; the customer sees it on the rejected order. -->
+                <div id="rv-reject-panel" class="reject-panel hidden">
+                    <div class="field">
+                        <label class="label" for="rv-reject-reason">Reason (optional)</label>
+                        <textarea id="rv-reject-reason" class="input" rows="3" maxlength="500" placeholder="e.g. Please check the pickup address and the delivery date"></textarea>
+                        <span class="hint">The customer will see this. They can then edit the order and resubmit it.</span>
+                    </div>
+                    <button type="button" id="rv-reject-confirm" class="btn btn-danger btn-block" data-id="${ui.esc(jobId)}" onclick="app.rejectRequest(this.dataset.id)">Confirm reject</button>
+                </div>
             </form>
         `;
 
@@ -2660,6 +2691,38 @@ const app = {
         set('rv-remarks', job.remarks);
 
         document.getElementById('approve-draft-form').addEventListener('submit', (ev) => this.approveDraft(ev, jobId, expected));
+    },
+
+    // Admin (review page): show or hide the reject box. Pressing Reject again closes it.
+    toggleRejectPanel() {
+        const panel = document.getElementById('rv-reject-panel');
+        const btn = document.getElementById('rv-reject-toggle');
+        if (!panel || !btn) return;
+        const opening = panel.classList.contains('hidden');
+        panel.classList.toggle('hidden', !opening);
+        btn.setAttribute('aria-expanded', String(opening));
+        if (opening) document.getElementById('rv-reject-reason').focus();
+    },
+
+    // Admin: send a waiting request back to the customer. The reason is optional.
+    // The customer then sees the order as Rejected and can edit and resubmit it, or delete it.
+    // Needs the admin_reject_job function in the database.
+    async rejectRequest(jobId) {
+        const reasonEl = document.getElementById('rv-reject-reason');
+        const reason = reasonEl ? reasonEl.value.trim() : '';
+        const btn = document.getElementById('rv-reject-confirm');
+        if (btn) btn.disabled = true; // no double clicks while it is sending
+
+        const { error } = await supabaseClient.rpc('admin_reject_job', { p_job_id: String(jobId), p_reason: reason || null });
+        if (error) {
+            console.error(error);
+            if (btn) btn.disabled = false;
+            ui.notify("Failed to reject: " + error.message);
+            return;
+        }
+        ui.notify("Request rejected. The customer can edit and resubmit it.");
+        this.resetStops('rv');
+        this.showRtRequests();
     },
 
     toggleReviewOtherItem() {
