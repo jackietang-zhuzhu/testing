@@ -1094,14 +1094,13 @@ const app = {
             const isAssigned = !!job.assigned_at;
             const priceLabel = isAssigned ? 'Accepted price' : (job.offered_price ? 'Budget' : 'Expected price');
             const price = job.accepted_price ?? job.offered_price ?? job.customer_expected_price;
-            const complete = this.isComplete(job);
             if (!(job.id in this.cardOpen)) this.cardOpen[job.id] = false;
             const open = this.cardOpen[job.id];
 
             return `
                 <article class="job-card${open ? '' : ' is-collapsed'}" data-job="${id}">
                     <div class="job-head">
-                        ${complete ? ui.pill('Completed', 'go', 'ri-check-double-line') : ui.pill('Archived', 'neutral', 'ri-archive-line')}
+                        ${ui.pill('Completed', 'go', 'ri-check-double-line')}
                         <span class="job-time">${ui.posted(job.created_at)}</span>
                     </div>
                     ${this.adminSummary(job)}
@@ -2852,7 +2851,7 @@ const app = {
             return `
                 <article class="job-card is-dim">
                     <div class="job-head">
-                        ${ui.pill('Archived', 'neutral', 'ri-archive-line')}
+                        ${ui.pill('Completed', 'go', 'ri-check-double-line')}
                         <span class="job-time">${ui.posted(job.created_at)}</span>
                     </div>
                     ${ui.route(job)}
