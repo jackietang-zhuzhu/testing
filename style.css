@@ -725,3 +725,13 @@ input[type="file"]::file-selector-button {
 .rate-star:focus-visible { outline: 2px solid var(--info); outline-offset: 2px; }
 .stars { display: inline-flex; gap: 1px; vertical-align: middle; color: var(--road); font-size: 1rem; }
 .stars .ri-star-line { color: var(--line-strong); }
+
+/* ---------- Customer: the PO is the one document the customer uploads, so it stands out ---------- */
+.do-block.is-prominent {
+    background: var(--road-soft);
+    border: 1px solid #ecd48c;
+    border-left: 4px solid var(--road);
+    padding: 12px 14px;
+}
+.do-block.is-prominent > b,
+.do-block.is-prominent > div > b { font-size: .95rem; }
