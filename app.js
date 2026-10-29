@@ -429,6 +429,8 @@ const app = {
     noRatings: false,        // set when the rating columns are not in job_docs yet (the rating box is then hidden)
     tpMonth: '',             // Transporters tab: chosen month ('' = not chosen yet, 'all' = all time)
     cardOpen: {},            // customer Orders list: job id -> true (expanded) / false (collapsed). Survives auto-refresh.
+    cardTouched: {},         // job ids the customer opened/closed themselves: only these are saved on the device
+    cardLoadedFor: null,     // user id whose saved choices are loaded into cardOpen
 
     async init() {
         document.getElementById('login-form').addEventListener('submit', (e) => this.handleLogin(e));
@@ -540,6 +542,9 @@ const app = {
         this.boardJobs = [];
         this.myJobsBids = [];
         this.customerHistory = [];
+        this.cardOpen = {};
+        this.cardTouched = {};
+        this.cardLoadedFor = null;
         ['rt', 'hist', 'cust', 'board', 'mine'].forEach(p => ['search', 'from', 'to'].forEach(id => {
             const el = document.getElementById(p + '-' + id);
             if (el) el.value = '';
@@ -2224,6 +2229,7 @@ const app = {
 
     renderCustomerJobs() {
         const container = document.getElementById('customer-jobs-container');
+        this.loadCardPrefs();
         const base = this.customerJobs || [];
         const all = this.filterJobs(base, 'cust'); // delivery-date filter
         this.updateFilterUi('cust', all.length, base.length);
@@ -2329,6 +2335,7 @@ const app = {
         const card = [...document.querySelectorAll('#customer-jobs-container .job-card')].find(el => el.dataset.job === id);
         if (!card) return;
         this.setCardOpen(card, card.classList.contains('is-collapsed')); // collapsed now -> open it, and vice versa
+        this.saveCardPrefs();
         this.syncToggleAll();
     },
 
@@ -2341,6 +2348,7 @@ const app = {
             if (label) label.textContent = open ? 'Show less' : 'Show more';
         }
         this.cardOpen[card.dataset.job] = open;
+        this.cardTouched[card.dataset.job] = true; // the customer chose this, so remember it
     },
 
     // "Collapse all" when every card shown is open, otherwise "Expand all". Only the cards currently shown are affected.
@@ -2348,7 +2356,40 @@ const app = {
         const cards = [...document.querySelectorAll('#customer-jobs-container .job-card')];
         const allOpen = cards.every(c => !c.classList.contains('is-collapsed'));
         cards.forEach(c => this.setCardOpen(c, !allOpen));
+        this.saveCardPrefs();
         this.syncToggleAll();
+    },
+
+    // Remember each customer's Show more / Show less choices on this device, so a full page refresh keeps them.
+    // Only the customer's own clicks are saved (not the automatic defaults). Stored per user: order ids and true/false only.
+    cardStoreKey() {
+        return this.currentUser ? 'rtll-card-open-' + this.currentUser.id : null;
+    },
+    loadCardPrefs() {
+        const uid = this.currentUser && this.currentUser.id;
+        if (!uid || this.cardLoadedFor === uid) return; // nobody signed in yet, or already loaded
+        this.cardLoadedFor = uid;
+        this.cardOpen = {};
+        this.cardTouched = {};
+        try {
+            const saved = JSON.parse(localStorage.getItem(this.cardStoreKey()) || '{}');
+            if (saved && typeof saved === 'object') {
+                Object.keys(saved).forEach(id => {
+                    if (typeof saved[id] === 'boolean') { this.cardOpen[id] = saved[id]; this.cardTouched[id] = true; }
+                });
+            }
+        } catch (e) { /* storage blocked or unreadable: just use the defaults */ }
+    },
+    saveCardPrefs() {
+        const key = this.cardStoreKey();
+        if (!key) return;
+        try {
+            // drop choices for orders that no longer exist, so the saved list cannot grow forever
+            const known = new Set([...(this.customerJobs || []), ...(this.customerHistory || [])].map(j => String(j.id)));
+            const out = {};
+            Object.keys(this.cardTouched).forEach(id => { if (!known.size || known.has(id)) out[id] = !!this.cardOpen[id]; });
+            localStorage.setItem(key, JSON.stringify(out));
+        } catch (e) { /* storage full or blocked: the choice still works until the page is reloaded */ }
     },
 
     syncToggleAll() {
