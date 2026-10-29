@@ -350,6 +350,43 @@ const ui = {
             emptyText: 'Upload the invoice once it is ready. The customer will see it on their order.', ...opts
         });
     },
+    fileThumb(rawUrl, title = 'Open file') {
+        const url = this.esc(rawUrl);
+        return this.isPdf(rawUrl)
+            ? `<a class="photo-thumb is-file" href="${url}" target="_blank" rel="noopener noreferrer" title="${this.esc(title)}"><i class="ri-file-pdf-2-line"></i><span>PDF</span></a>`
+            : `<a class="photo-thumb" href="${url}" target="_blank" rel="noopener noreferrer"><img src="${url}" alt="${this.esc(title)}" loading="lazy"></a>`;
+    },
+    // Admin version of the DO box: shows each DO and lets the admin upload or replace it (one per drop-off when there are several)
+    doSlipAdmin(job) {
+        const items = this.dosOf(job);
+        const total = this.stops(job).length + 1;
+        const head = 'display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:4px 12px';
+        const note = (html) => `<span style="font-weight:400;font-size:.75rem;color:var(--muted)">${html}</span>`;
+        const when = (d) => (d && d.uploaded_at) ? note('Uploaded ' + this.fmtDateTime(d.uploaded_at)) : '';
+        const upBtn = (stop, done) => `<label class="btn ${done ? 'btn-secondary' : 'btn-primary'} btn-sm" style="cursor:pointer">
+                <i class="ri-upload-2-line"></i> ${done ? 'Replace DO' : 'Upload DO'}
+                <input type="file" accept="image/*,application/pdf" hidden data-job-id="${this.esc(job.id)}"${stop === null ? '' : ` data-stop="${stop}"`} ${done ? `onclick="if(!confirm('This will replace the DO already uploaded. Continue?')) event.preventDefault()"` : ''} onchange="app.uploadDO(this)">
+            </label>`;
+        const strip = (d, stop, name) => `<div class="photo-strip is-small" style="align-items:center;gap:12px;margin-top:8px">${d ? this.fileThumb(d.url, 'Delivery Order') + `<a class="btn btn-secondary btn-sm" href="${this.esc(this.downloadUrl(d.url, name))}" download><i class="ri-download-2-line"></i> Download</a>` : ''}${upBtn(stop, !!d)}</div>`;
+        if (total === 1) {
+            const d = items[0] || null;
+            return `<div class="remarks do-block">
+                <div style="${head}"><b>Delivery Order (DO)</b>${d ? when(d) : note('Not uploaded yet')}</div>
+                ${strip(d, null, 'Delivery-Order')}
+            </div>`;
+        }
+        const rows = Array.from({ length: total }, (_, i) => {
+            const d = items.find(x => x.stop === i) || null;
+            return `<div class="do-item">
+                <div class="do-item-head"><span>${this.esc(this.dropLabel(job, i))}</span>${when(d)}</div>
+                ${strip(d, i, 'Delivery-Order-Drop-off-' + (i + 1))}
+            </div>`;
+        }).join('');
+        return `<div class="remarks do-block">
+            <div style="${head}"><b>Delivery Orders (DO)</b>${note(`${items.length} of ${total} uploaded`)}</div>
+            ${rows}
+        </div>`;
+    },
     remarks(text) {
         return text ? `<p class="remarks"><b>Remarks:</b> ${this.esc(text)}</p>` : '';
     },
@@ -1057,20 +1094,25 @@ const app = {
             const isAssigned = !!job.assigned_at;
             const priceLabel = isAssigned ? 'Accepted price' : (job.offered_price ? 'Budget' : 'Expected price');
             const price = job.accepted_price ?? job.offered_price ?? job.customer_expected_price;
-            
+            const complete = this.isComplete(job);
+            if (!(job.id in this.cardOpen)) this.cardOpen[job.id] = false;
+            const open = this.cardOpen[job.id];
+
             return `
-                <article class="job-card is-dim">
+                <article class="job-card${open ? '' : ' is-collapsed'}" data-job="${id}">
                     <div class="job-head">
-                        ${ui.pill('Archived', 'neutral', 'ri-archive-line')}
+                        ${complete ? ui.pill('Completed', 'go', 'ri-check-double-line') : ui.pill('Archived', 'neutral', 'ri-archive-line')}
                         <span class="job-time">${ui.posted(job.created_at)}</span>
                     </div>
-                    ${ui.customerLine(job)}
-                    ${ui.route(job)}
-                    ${ui.facts(job, { date: job.delivery_date, delivered: !!job.do_url })}
-                    ${ui.doSlip(job, { download: true })}
-                    ${ui.poSlip(job, { download: true })}
-                    ${ui.invSlip(job, { download: true })}
-                    ${ui.ratingLine(job)}
+                    ${this.adminSummary(job)}
+                    <div class="job-body" id="jb-${id}">
+                        ${ui.customerLine(job)}
+                        ${ui.route(job)}
+                        ${ui.facts(job, { date: job.delivery_date, delivered: !!job.do_url })}
+                        ${this.adminDocs(job)}
+                        ${ui.ratingLine(job)}
+                    </div>
+                    ${this.adminToggle(id, open)}
                     <div class="job-foot">
                         ${ui.price(priceLabel, price)}
                         <div class="actions">
@@ -1545,9 +1587,6 @@ const app = {
                 ${ui.facts(job, { date: job.delivery_date, dateLabel: 'Original date', delivered: !!job.do_url })}
                 ${ui.photos(job, true)}
                 ${ui.remarks(job.remarks)}
-                ${ui.doSlip(job, { showTime: true, download: true })}
-                ${ui.poSlip(job, { download: true })}
-                ${ui.invSlip(job, { download: true, upload: job.status === 'assigned' && !!job.do_url })}
                 <div class="job-foot">
                     ${ui.price('Original budget', originalPrice)}
                 </div>
@@ -2068,6 +2107,7 @@ const app = {
     // Redraw whichever admin screen the INV was uploaded from
     refreshAdminJobViews() {
         if (this.viewIs('rtReviewBids') && this.currentBidsJobId) this.viewBids(this.currentBidsJobId);
+        else if (this.viewIs('rtHistory')) this.fetchHistoryForRT();
         else this.fetchJobsForRT();
     },
 
@@ -2735,9 +2775,12 @@ const app = {
             .from('job-photos')
             .getPublicUrl(filePath);
 
-        const { error: saveError } = stop === null
-            ? await supabaseClient.rpc('attach_do', { p_job_id: jobId, p_url: publicUrlData.publicUrl })
-            : await supabaseClient.rpc('attach_do_stop', { p_job_id: jobId, p_stop: stop, p_url: publicUrlData.publicUrl });
+        const isAdmin = this.currentUserRole === 'rt';
+        const { error: saveError } = isAdmin
+            ? await supabaseClient.rpc('admin_set_do', { p_job_id: String(jobId), p_stop: stop, p_url: publicUrlData.publicUrl })
+            : (stop === null
+                ? await supabaseClient.rpc('attach_do', { p_job_id: jobId, p_url: publicUrlData.publicUrl })
+                : await supabaseClient.rpc('attach_do_stop', { p_job_id: jobId, p_stop: stop, p_url: publicUrlData.publicUrl }));
 
         if (saveError) {
             console.error('DO save error:', saveError);
@@ -2749,7 +2792,8 @@ const app = {
 
         this.uploading = 0;
         ui.notify(stop === null ? "DO uploaded." : `DO uploaded for drop-off ${stop + 1}.`);
-        this.fetchMyJobs();
+        input.value = '';
+        if (isAdmin) this.refreshAdminJobViews(); else this.fetchMyJobs();
     },
 
 	async fetchMyJobs(silent = false) {
@@ -2873,6 +2917,98 @@ const app = {
         }).join('');
     },
 
+    // ==========================================
+    // --- ADMIN: documents (PO / DO / INV), completing jobs ---
+    // The admin can upload or replace every document on any assigned job.
+    // A job that has the accepted price, PO, DO and INV is completed (moved to History) by the database itself,
+    // whoever uploaded the last document and whether or not anyone has the app open.
+    // The admin can also complete a job by hand (for example a verbal booking that never gets a PO).
+    // History is the 'archived' status, so customers and transporters see it there as before.
+    // ==========================================
+    adminDocs(job) {
+        return ui.poSlip(job, { download: true, upload: true, handler: 'adminUploadPO', emptyText: 'No PO yet. The customer can upload it, or you can upload it here.' })
+            + ui.doSlipAdmin(job)
+            + ui.invSlip(job, { download: true, upload: true });
+    },
+
+    // Admin: Upload / Replace PO on behalf of the customer
+    async adminUploadPO(input) {
+        const file = input.files && input.files[0];
+        const jobId = input.dataset.jobId;
+        if (!file || !jobId) return;
+        this.uploading = Date.now();
+        ui.notify('Uploading PO...');
+        const url = await this.uploadDocFile(file, 'po', 'PO');
+        let saved = false;
+        if (url) {
+            const { error } = await supabaseClient.rpc('admin_set_po', { p_job_id: String(jobId), p_url: url });
+            if (error) { console.error('PO save error:', error); ui.notify('Could not save the PO to the job: ' + error.message); }
+            else saved = true;
+        }
+        this.uploading = 0;
+        input.value = '';
+        if (!saved) return;
+        ui.notify('PO uploaded.');
+        this.refreshAdminJobViews();
+    },
+
+    // Everything a job needs before it is finished
+    isComplete(job) {
+        return !!(job && job.accepted_price != null && job.do_url && job.customer_po && job.invoice_file);
+    },
+
+    // Admin: mark one delivered job as completed by hand (even if a document is still missing)
+    async completeJob(jobId) {
+        const job = (this.rtJobsList || []).find(j => String(j.id) === String(jobId));
+        const missing = [];
+        if (job) {
+            if (!job.do_url) missing.push('DO');
+            if (!job.customer_po) missing.push('PO');
+            if (!job.invoice_file) missing.push('INV');
+        }
+        const msg = missing.length
+            ? `This job is still missing: ${missing.join(', ')}.\nMark it as completed anyway and move it to History?`
+            : 'Mark this job as completed and move it to History?';
+        if (!confirm(msg)) return;
+        const { data, error } = await supabaseClient
+            .from('jobs')
+            .update({ status: 'archived' })
+            .eq('id', jobId)
+            .eq('status', 'assigned')
+            .select('id');
+        if (error) { ui.notify('Error completing job: ' + error.message); return; }
+        if (!data || !data.length) { ui.notify('Could not complete the job: it may already have been handled.'); return; }
+        ui.toast('Job completed and moved to History.', 'success');
+        this.fetchJobsForRT();
+    },
+
+    // One-line summary shown while an admin card is collapsed
+    adminSummary(job) {
+        const dropCount = ui.stops(job).length + 1;
+        const route = `${ui.esc(ui.place(job.source_loc))} <span class="sum-arrow" aria-hidden="true">→</span> ${ui.esc(ui.place(job.dest_loc))}${dropCount > 1 ? ` <span class="sum-more">+${dropCount - 1} more</span>` : ''}`;
+        const c = job.customers && job.customers.company_name;
+        const meta = [
+            c ? ui.esc(c) : '',
+            `${ui.esc(job.quantity)} ${ui.esc(job.item_desc)}`,
+            job.delivery_date ? `Delivery ${ui.fmtDate(job.delivery_date)}` : ''
+        ].filter(Boolean).join(' · ');
+        return `<div class="job-summary"><div class="sum-route">${route}</div><div class="sum-meta">${meta}</div></div>`;
+    },
+
+    adminToggle(id, open) {
+        return `<button type="button" class="card-more" data-id="${id}" aria-expanded="${open}" aria-controls="jb-${id}" onclick="app.toggleRtCard(this.dataset.id)">
+                        <span class="more-label">${open ? 'Show less' : 'Show more'}</span><i class="ri-arrow-down-s-line chev" aria-hidden="true"></i>
+                    </button>`;
+    },
+
+    // Open or close one admin card without redrawing the list (the scroll position stays put)
+    toggleRtCard(jobId) {
+        const id = String(jobId);
+        const card = [...document.querySelectorAll('.job-card')].find(el => el.dataset.job === id);
+        if (!card) return;
+        this.setCardOpen(card, card.classList.contains('is-collapsed'));
+    },
+
     setRtTodo(key) {
         this.rtTodo = key;
         this.renderRTJobs(this.rtJobsList || []);
@@ -2991,24 +3127,31 @@ const app = {
             const todo = ui.todoOf(job);
             const todoPill = todo === 'po' ? ui.pill('PO missing', 'warn', 'ri-file-warning-line')
                 : (todo === 'inv' ? ui.pill('INV to upload', 'info', 'ri-file-upload-line') : '');
+            const delivered = isAssigned && !!job.do_url;
+            if (!(job.id in this.cardOpen)) this.cardOpen[job.id] = false;
+            const open = this.cardOpen[job.id];
 
             return `
-                <article class="job-card">
+                <article class="job-card${open ? '' : ' is-collapsed'}" data-job="${id}">
                     <div class="job-head">
                         <span style="display:inline-flex;gap:6px;flex-wrap:wrap">${isAssigned ? ui.pill('Assigned', 'go', 'ri-check-line') : ui.pill('Open for bids', 'info')}${todoPill}</span>
                         <span class="job-time">${ui.posted(job.created_at)}</span>
                     </div>
-                    ${ui.customerLine(job)}
-                    ${ui.route(job)}
-                    ${ui.facts(job, { date: job.delivery_date, delivered: isAssigned && !!job.do_url })}
-                    ${ui.poSlip(job, { download: true })}
-                    ${ui.invSlip(job, { download: true, upload: isAssigned && !!job.do_url })}
-                    ${ui.ratingLine(job)}
+                    ${this.adminSummary(job)}
+                    <div class="job-body" id="jb-${id}">
+                        ${ui.customerLine(job)}
+                        ${ui.route(job)}
+                        ${ui.facts(job, { date: job.delivery_date, delivered })}
+                        ${isAssigned ? this.adminDocs(job) : ''}
+                        ${ui.ratingLine(job)}
+                    </div>
+                    ${this.adminToggle(id, open)}
                     <div class="job-foot">
                         ${ui.price('Budget', job.offered_price)}
                         <div class="actions">
                             ${isAssigned
                                 ? `<button class="btn btn-secondary btn-sm" data-id="${id}" onclick="app.viewBids(this.dataset.id)">Assigned details</button>
+                                   ${delivered ? `<button class="btn btn-go btn-sm" data-id="${id}" onclick="app.completeJob(this.dataset.id)"><i class="ri-check-double-line"></i> Complete</button>` : ''}
                                    <button class="btn btn-warn btn-sm" data-id="${id}" onclick="app.unassignJob(this.dataset.id)">Undo</button>`
                                 : `<button class="btn btn-primary btn-sm" data-id="${id}" onclick="app.viewBids(this.dataset.id)">View bids</button>`
                             }
