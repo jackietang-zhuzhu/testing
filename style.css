@@ -281,6 +281,33 @@ input[type="file"]::file-selector-button {
 .job-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .job-time { font-size: .75rem; color: var(--muted); }
 
+/* ---------- Collapsible order cards (customer Orders list) ---------- */
+.card-more {
+    display: flex; align-items: center; justify-content: center; gap: 2px;
+    width: 100%; margin-top: 2px; padding: 10px 0 2px;
+    background: none; border: 0; border-top: 1px solid var(--line);
+    font: inherit; font-size: .875rem; font-weight: 600; color: var(--info);
+    cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+.card-more:hover { color: var(--info-ink); }
+.card-more .chev { font-size: 20px; line-height: 1; transition: transform .15s; }
+.job-card:not(.is-collapsed) .card-more .chev { transform: rotate(180deg); }
+
+.job-body { display: flex; flex-direction: column; gap: 14px; }
+.job-card.is-collapsed .job-body { display: none; }
+
+.job-summary { display: none; flex-direction: column; gap: 4px; min-width: 0; }
+.job-card.is-collapsed .job-summary { display: flex; }
+.sum-route { font-weight: 600; font-size: 1rem; line-height: 1.35; overflow-wrap: anywhere; }
+.sum-arrow { color: var(--muted); font-weight: 500; margin: 0 2px; }
+.sum-more { font-size: .75rem; font-weight: 600; color: var(--muted); white-space: nowrap; }
+.sum-meta { font-size: .8125rem; color: var(--muted); }
+.job-card.is-collapsed { gap: 8px; }
+
+.list-bar { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.list-bar .chips { flex: 1; min-width: 0; }
+.list-toggle-all { font-size: .8125rem; white-space: nowrap; padding: 7px 0; flex-shrink: 0; }
+
 /* The route: pickup to drop-off, joined by a dashed centre line */
 .route {
     list-style: none; margin: 0; padding: 0;
@@ -552,7 +579,7 @@ input[type="file"]::file-selector-button {
 @media (prefers-reduced-motion: reduce) {
     .skeleton { animation: none; }
     .toast { animation: none; }
-    .btn, .input { transition: none; }
+    .btn, .input, .card-more .chev { transition: none; }
 }
 
 @media (max-width: 380px) {
@@ -695,33 +722,3 @@ input[type="file"]::file-selector-button {
 .rate-star:focus-visible { outline: 2px solid var(--info); outline-offset: 2px; }
 .stars { display: inline-flex; gap: 1px; vertical-align: middle; color: var(--road); font-size: 1rem; }
 .stars .ri-star-line { color: var(--line-strong); }
-
-/* ---------- Customer cards: photos, remarks and documents fold away ---------- */
-.more { border-top: 1px solid var(--line); margin: 0 -16px -2px; padding: 0 16px; }
-.more > summary {
-    list-style: none;
-    display: flex; align-items: center; gap: 10px;
-    min-height: 44px; padding: 6px 0;
-    cursor: pointer;
-    -webkit-tap-highlight-color: transparent;
-}
-.more > summary::-webkit-details-marker { display: none; }
-.more > summary::after {
-    content: "";
-    flex-shrink: 0;
-    width: 8px; height: 8px; margin: 0 4px 3px auto;
-    border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted);
-    transform: rotate(45deg);
-    transition: transform .15s;
-}
-.more[open] > summary::after { transform: rotate(-135deg); margin-bottom: -3px; }
-.more-title { font-size: .8125rem; font-weight: 600; color: var(--ink-2); }
-.more-list { font-size: .75rem; color: var(--muted); min-width: 0; overflow-wrap: anywhere; }
-.more-body { display: flex; flex-direction: column; gap: 12px; padding: 4px 0 6px; }
-@media (prefers-reduced-motion: reduce) { .more > summary::after { transition: none; } }
-
-/* ---------- Admin: transporter card summary line (stays visible when the card is folded) ---------- */
-.tp-summary { font-size: .875rem; color: var(--ink-2); overflow-wrap: anywhere; }
-.tp-summary b { font-weight: 700; color: var(--ink); font-variant-numeric: tabular-nums; }
-.tp-summary .tp-bad, .tp-summary .tp-bad b { color: var(--stop-ink); }
-.tp-summary .tp-warn, .tp-summary .tp-warn b { color: var(--road-ink); }
