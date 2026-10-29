@@ -2968,10 +2968,17 @@ const app = {
             if (!(job.id in this.cardOpen)) this.cardOpen[job.id] = false;
             const open = this.cardOpen[job.id];
 
+            // Reminder while the DO is still missing (stays visible when the card is collapsed)
+            const doTotal = ui.stops(job).length + 1;
+            const doHave = ui.dosOf(job).length;
+            const doMissing = !job.do_url;
+            const doPill = !doMissing ? '' : ui.pill(doHave ? `DO ${doHave}/${doTotal} uploaded` : 'DO not uploaded', 'warn', 'ri-file-warning-line');
+            const doNotice = !doMissing ? '' : `<div class="notice notice-warn"><i class="ri-upload-2-line"></i><span>${doHave ? `Still need to upload the DO for ${doTotal - doHave} drop-off${doTotal - doHave === 1 ? '' : 's'}.` : 'Please upload the DO once the delivery is done.'}</span></div>`;
+
             return `
                 <article class="job-card is-mine${open ? '' : ' is-collapsed'}" data-job="${id}">
                     <div class="job-head">
-                        ${ui.pill('Assigned to you', 'go', 'ri-truck-fill')}
+                        <span style="display:inline-flex;gap:6px;flex-wrap:wrap">${ui.pill('Assigned to you', 'go', 'ri-truck-fill')}${doPill}</span>
                         <span class="job-time">${ui.posted(job.created_at)}</span>
                     </div>
                     ${this.adminSummary(job, finalDate)}
@@ -2983,6 +2990,7 @@ const app = {
                         ${ui.doSlip(job)}
                         ${ui.doStopUploads(job)}
                     </div>
+                    ${doNotice}
                     ${this.adminToggle(id, open)}
                     <div class="job-foot">
                         ${ui.price('Your price', bid.proposed_price)}
