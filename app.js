@@ -2305,11 +2305,11 @@ const app = {
                     </div>
                     <div class="job-body" id="jb-${id}">
                         ${this.customerSteps(stage, job)}
-                        ${ui.poSlip(job, { title: 'Your PO', upload: stage === 'delivered', cls: 'is-prominent' })}
                         ${ui.route(job)}
                         ${ui.facts(job, { date: job.delivery_date })}
                         ${ui.photos(job, true)}
                         ${ui.remarks(job.remarks)}
+                        ${ui.poSlip(job, { title: 'Your PO', upload: stage === 'delivered', cls: 'is-prominent' })}
                         ${ui.doSlip(job, { showTime: true, timeLabel: 'Delivered', download: true })}
                         ${ui.invSlip(job, { download: true })}
                         ${stage === 'delivered' ? ui.ratingBox(job) : ''}
