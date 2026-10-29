@@ -2210,7 +2210,7 @@ const app = {
 
     customerSteps(stage, job) {
         const order = ['review', 'approved', 'delivering', 'delivered'];
-        const labels = ['Ordered', 'Approved', 'Delivering', 'Delivered'];
+        const labels = ['Order received', 'Looking for driver', 'Driver assigned', 'Delivered'];
         const times = [job.created_at, job.approved_at, job.assigned_at, job.do_uploaded_at];
         const reached = order.indexOf(stage);
         return `<ol class="steps" aria-label="Order progress">${labels.map((label, i) => {
@@ -2368,25 +2368,12 @@ const app = {
         this.cardLoadedFor = uid;
         this.cardOpen = {};
         this.cardTouched = {};
-        try {
-            const saved = JSON.parse(localStorage.getItem(this.cardStoreKey()) || '{}');
-            if (saved && typeof saved === 'object') {
-                Object.keys(saved).forEach(id => {
-                    if (typeof saved[id] === 'boolean') { this.cardOpen[id] = saved[id]; this.cardTouched[id] = true; }
-                });
-            }
-        } catch (e) { /* storage blocked or unreadable: just use the defaults */ }
+        // Choices are no longer remembered across page refreshes: every order starts collapsed.
+        // Clear anything saved by the older version, otherwise those old choices would keep cards open.
+        try { localStorage.removeItem(this.cardStoreKey()); } catch (e) { /* storage blocked: nothing to clear */ }
     },
     saveCardPrefs() {
-        const key = this.cardStoreKey();
-        if (!key) return;
-        try {
-            // drop choices for orders that no longer exist, so the saved list cannot grow forever
-            const known = new Set([...(this.customerJobs || []), ...(this.customerHistory || [])].map(j => String(j.id)));
-            const out = {};
-            Object.keys(this.cardTouched).forEach(id => { if (!known.size || known.has(id)) out[id] = !!this.cardOpen[id]; });
-            localStorage.setItem(key, JSON.stringify(out));
-        } catch (e) { /* storage full or blocked: the choice still works until the page is reloaded */ }
+        // Intentionally empty: open/closed state lives only in memory (cardOpen) until the page is refreshed.
     },
 
     syncToggleAll() {
