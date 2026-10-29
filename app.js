@@ -1125,6 +1125,8 @@ const app = {
         const clear = document.getElementById(prefix + '-clear');
         if (count) count.textContent = (f.active && total) ? `Showing ${shown} of ${total}` : '';
         if (clear) clear.style.display = f.active ? '' : 'none';
+        const meta = (count || clear) && (count || clear).closest('.filter-meta');
+        if (meta && meta.hasAttribute('data-idle-hide')) meta.classList.toggle('is-on', f.active);
     },
 
     applyJobFilter(prefix) {
