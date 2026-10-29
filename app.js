@@ -3595,7 +3595,7 @@ const app = {
         const box = (value, label, tone = '') => `<div class="tp-stat${tone ? ' is-' + tone : ''}"><b>${value}</b><span>${label}</span></div>`;
         const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
-        container.innerHTML = note + rows.map(({ s, p }) => {
+        container.innerHTML = note + rows.map(({ id, s, p }) => {
             const tel = String(p.phone || '').replace(/[^\d+]/g, '');
             const phoneHtml = p.phone
                 ? (tel ? `<a href="tel:${ui.esc(tel)}"><i class="ri-phone-line"></i>${ui.esc(p.phone)}</a>` : `<span><i class="ri-phone-line"></i>${ui.esc(p.phone)}</span>`)
@@ -3629,19 +3629,33 @@ const app = {
                 ? places.map(x => `${ui.esc(x.label)} <span class="hint">&times;${x.n}</span>`).join(' &middot; ')
                 : '<span class="hint">No awarded jobs yet</span>';
 
+            // Collapsed by default: name, status pills and a one-line summary. "Show more" opens everything else.
+            const key = 'tp-' + id;
+            if (!(key in this.cardOpen)) this.cardOpen[key] = false;
+            const open = this.cardOpen[key];
+            const summary = [
+                `${s.awarded} awarded`,
+                `${s.delivered} delivered`,
+                s.inProgress ? `${s.inProgress} in progress` : '',
+                s.overdue ? `${s.overdue} overdue` : '',
+                s.cancelled ? `${s.cancelled} taken back` : ''
+            ].filter(Boolean).join(' · ');
+
             return `
-                <article class="job-card">
+                <article class="job-card${open ? '' : ' is-collapsed'}" data-job="${ui.esc(key)}">
                     <div class="bid-top">
                         <div>
                             <h3 class="bid-company">${ui.esc(p.company_name || 'Unknown transporter')}</h3>
-                            <div class="bid-contact">
+                        </div>
+                        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">${pills.join('')}</div>
+                    </div>
+                    <div class="job-summary"><div class="sum-meta">${summary}</div></div>
+                    <div class="job-body" id="jb-${ui.esc(key)}">
+                            <div class="bid-contact" style="margin-top:0">
                                 ${p.contact_person ? `<span><i class="ri-user-line"></i>${ui.esc(p.contact_person)}</span>` : ''}
                                 ${phoneHtml}
                                 <span title="${ui.esc(p.last_active_at ? ui.fmtDateTime(p.last_active_at) : 'Has not opened the job board yet')}"><i class="ri-time-line"></i>Last active: ${ui.esc(this.relativeTime(p.last_active_at))}${p.last_active_at ? ` <span class="hint">(${ui.fmtDateTime(p.last_active_at)})</span>` : ''}</span>
                             </div>
-                        </div>
-                        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">${pills.join('')}</div>
-                    </div>
                     <div class="tp-stats">
                         ${box(s.awarded, 'Awarded')}
                         ${box(s.delivered, 'Delivered', s.delivered ? 'ok' : '')}
@@ -3664,6 +3678,8 @@ const app = {
                         <div class="tp-line">${placesHtml}</div>
                     </div>
                     ${ratingHtml}
+                    </div>
+                    ${this.adminToggle(ui.esc(key), open)}
                 </article>
             `;
         }).join('');
