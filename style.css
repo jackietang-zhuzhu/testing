@@ -642,6 +642,9 @@ input[type="file"]::file-selector-button {
 }
 .search-box .input { padding-left: 38px; }
 .filter-meta { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 18px; }
+/* A meta row marked data-idle-hide takes no space until a filter is actually in use */
+.filter-meta[data-idle-hide] { display: none; }
+.filter-meta[data-idle-hide].is-on { display: flex; }
 
 /* ---------- Person in charge + phone on a route stop ---------- */
 .route-stop.has-contact { flex-wrap: wrap; row-gap: 2px; }
