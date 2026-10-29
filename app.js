@@ -3320,24 +3320,17 @@ const app = {
                    <button class="btn btn-secondary" data-id="${id}" data-date="${ui.esc(job.delivery_date)}" data-price="${price}"
                            onclick="app.prepareCounterOffer(this.dataset.id, this.dataset.date, Number(this.dataset.price))">Counter-offer</button>`;
 
-            if (!(job.id in this.cardOpen)) this.cardOpen[job.id] = false;
-            const open = this.cardOpen[job.id];
-
             return `
-                <article class="job-card${banned ? ' is-dim' : ''}${open ? '' : ' is-collapsed'}" data-job="${id}">
+                <article class="job-card${banned ? ' is-dim' : ''}">
                     <div class="job-head">
                         <span style="display:inline-flex;gap:6px;flex-wrap:wrap">${ui.pill('Open', 'go')}${mine.length ? ui.pill('Bid sent', 'info', 'ri-check-line') : ''}</span>
                         <span class="job-time">${ui.posted(job.created_at)}</span>
                     </div>
-                    ${this.adminSummary(job)}
-                    <div class="job-body" id="jb-${id}">
-                        ${ui.route(job, { contacts: false })}
-                        ${ui.facts(job, { date: job.delivery_date })}
-                        ${ui.photos(job)}
-                        ${ui.remarks(job.remarks)}
-                    </div>
+                    ${ui.route(job, { contacts: false })}
+                    ${ui.facts(job, { date: job.delivery_date })}
+                    ${ui.photos(job)}
+                    ${ui.remarks(job.remarks)}
                     ${bidNotice}
-                    ${this.adminToggle(id, open)}
                     <div class="job-foot">
                         ${ui.price('Offered price', price)}
                         <div class="actions-wide">${actions}</div>
