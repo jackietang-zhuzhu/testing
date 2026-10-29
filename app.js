@@ -2475,20 +2475,26 @@ const app = {
                 ? `<button class="btn btn-secondary btn-sm" data-id="${id}" onclick="app.openCustomerCopy(this.dataset.id)"><i class="ri-repeat-line"></i> Book again</button>`
                 : '';
             const price = job.customer_expected_price != null ? ui.price('Your expected price', job.customer_expected_price) : '<span></span>';
+            if (!(job.id in this.cardOpen)) this.cardOpen[job.id] = false;
+            const open = this.cardOpen[job.id];
             return `
-                <article class="job-card is-dim">
+                <article class="job-card is-dim${open ? '' : ' is-collapsed'}" data-job="${id}">
                     <div class="job-head">
                         ${pill}
                         <span class="job-time">${ui.posted(job.created_at, 'Ordered')}</span>
                     </div>
-                    ${ui.route(job)}
-                    ${ui.facts(job, { date: job.delivery_date })}
-                    ${ui.photos(job, true)}
-                    ${ui.remarks(job.remarks)}
-                    ${ui.doSlip(job, { showTime: true, timeLabel: 'Delivered', download: true })}
-                    ${ui.poSlip(job)}
-                    ${ui.invSlip(job, { download: true })}
-                    ${delivered ? ui.ratingBox(job) : ''}
+                    ${this.adminSummary(job)}
+                    <div class="job-body" id="jb-${id}">
+                        ${ui.route(job)}
+                        ${ui.facts(job, { date: job.delivery_date })}
+                        ${ui.photos(job, true)}
+                        ${ui.remarks(job.remarks)}
+                        ${ui.doSlip(job, { showTime: true, timeLabel: 'Delivered', download: true })}
+                        ${ui.poSlip(job)}
+                        ${ui.invSlip(job, { download: true })}
+                        ${delivered ? ui.ratingBox(job) : ''}
+                    </div>
+                    ${this.adminToggle(id, open)}
                     <div class="job-foot">
                         ${price}
                         ${again ? `<div class="actions">${again}</div>` : ''}
@@ -2910,18 +2916,25 @@ const app = {
         }
         container.innerHTML = bids.map(bid => {
             const job = bid.jobs;
+            const id = ui.esc(job.id);
             const finalDate = bid.proposed_date || job.delivery_date;
+            if (!(job.id in this.cardOpen)) this.cardOpen[job.id] = false;
+            const open = this.cardOpen[job.id];
             return `
-                <article class="job-card is-dim">
+                <article class="job-card is-dim${open ? '' : ' is-collapsed'}" data-job="${id}">
                     <div class="job-head">
                         ${ui.pill('Completed', 'go', 'ri-check-double-line')}
                         <span class="job-time">${ui.posted(job.created_at)}</span>
                     </div>
-                    ${ui.route(job)}
-                    ${ui.facts(job, { date: finalDate, dateLabel: 'Agreed delivery', delivered: !!job.do_url })}
-                    ${ui.photos(job, true)}
-                    ${ui.remarks(job.remarks)}
-                    ${ui.doSlip(job, { showTime: true, download: true })}
+                    ${this.adminSummary(job, finalDate)}
+                    <div class="job-body" id="jb-${id}">
+                        ${ui.route(job)}
+                        ${ui.facts(job, { date: finalDate, dateLabel: 'Agreed delivery', delivered: !!job.do_url })}
+                        ${ui.photos(job, true)}
+                        ${ui.remarks(job.remarks)}
+                        ${ui.doSlip(job, { showTime: true, download: true })}
+                    </div>
+                    ${this.adminToggle(id, open)}
                     <div class="job-foot">
                         ${ui.price('Your price', bid.proposed_price)}
                     </div>
@@ -2949,21 +2962,28 @@ const app = {
         container.innerHTML = bids.map(bid => {
             const job = bid.jobs;
             if (!job) return '';
+            const id = ui.esc(job.id);
             const finalDate = bid.proposed_date || job.delivery_date;
             const stopMode = ui.doStopMode(job); // several drop-offs: one upload button per drop-off instead of the single one
+            if (!(job.id in this.cardOpen)) this.cardOpen[job.id] = false;
+            const open = this.cardOpen[job.id];
 
             return `
-                <article class="job-card is-mine">
+                <article class="job-card is-mine${open ? '' : ' is-collapsed'}" data-job="${id}">
                     <div class="job-head">
                         ${ui.pill('Assigned to you', 'go', 'ri-truck-fill')}
                         <span class="job-time">${ui.posted(job.created_at)}</span>
                     </div>
-                    ${ui.route(job)}
-                    ${ui.facts(job, { date: finalDate, dateLabel: 'Agreed delivery', delivered: !!job.do_url })}
-                    ${ui.photos(job)}
-                    ${ui.remarks(job.remarks)}
-                    ${ui.doSlip(job)}
-                    ${ui.doStopUploads(job)}
+                    ${this.adminSummary(job, finalDate)}
+                    <div class="job-body" id="jb-${id}">
+                        ${ui.route(job)}
+                        ${ui.facts(job, { date: finalDate, dateLabel: 'Agreed delivery', delivered: !!job.do_url })}
+                        ${ui.photos(job)}
+                        ${ui.remarks(job.remarks)}
+                        ${ui.doSlip(job)}
+                        ${ui.doStopUploads(job)}
+                    </div>
+                    ${this.adminToggle(id, open)}
                     <div class="job-foot">
                         ${ui.price('Your price', bid.proposed_price)}
                         ${stopMode ? '' : `<div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
@@ -3045,14 +3065,14 @@ const app = {
     },
 
     // One-line summary shown while an admin card is collapsed
-    adminSummary(job) {
+    adminSummary(job, date = job.delivery_date) {
         const dropCount = ui.stops(job).length + 1;
         const route = `${ui.esc(ui.place(job.source_loc))} <span class="sum-arrow" aria-hidden="true">→</span> ${ui.esc(ui.place(job.dest_loc))}${dropCount > 1 ? ` <span class="sum-more">+${dropCount - 1} more</span>` : ''}`;
         const c = job.customers && job.customers.company_name;
         const meta = [
             c ? ui.esc(c) : '',
             `${ui.esc(job.quantity)} ${ui.esc(job.item_desc)}`,
-            job.delivery_date ? `Delivery ${ui.fmtDate(job.delivery_date)}` : ''
+            date ? `Delivery ${ui.fmtDate(date)}` : ''
         ].filter(Boolean).join(' · ');
         return `<div class="job-summary"><div class="sum-route">${route}</div><div class="sum-meta">${meta}</div></div>`;
     },
@@ -3233,7 +3253,7 @@ const app = {
         });
         const monthKeys = [...byMonth.keys()].sort((x, y) => x === '' ? 1 : (y === '' ? -1 : y.localeCompare(x)));
         container.innerHTML = todoChips + monthKeys.map(k =>
-            `<h3 class="month-head">${ui.esc(this.monthLabel(k))}<span class="chip-count">${byMonth.get(k).length}</span></h3>` +
+            `<h3 class="month-head">${ui.esc(this.monthLabel(k))}</h3>` +
             byMonth.get(k).map(cardOf).join('')
         ).join('');
     },
@@ -3292,17 +3312,24 @@ const app = {
                    <button class="btn btn-secondary" data-id="${id}" data-date="${ui.esc(job.delivery_date)}" data-price="${price}"
                            onclick="app.prepareCounterOffer(this.dataset.id, this.dataset.date, Number(this.dataset.price))">Counter-offer</button>`;
 
+            if (!(job.id in this.cardOpen)) this.cardOpen[job.id] = false;
+            const open = this.cardOpen[job.id];
+
             return `
-                <article class="job-card${banned ? ' is-dim' : ''}">
+                <article class="job-card${banned ? ' is-dim' : ''}${open ? '' : ' is-collapsed'}" data-job="${id}">
                     <div class="job-head">
                         <span style="display:inline-flex;gap:6px;flex-wrap:wrap">${ui.pill('Open', 'go')}${mine.length ? ui.pill('Bid sent', 'info', 'ri-check-line') : ''}</span>
                         <span class="job-time">${ui.posted(job.created_at)}</span>
                     </div>
-                    ${ui.route(job, { contacts: false })}
-                    ${ui.facts(job, { date: job.delivery_date })}
-                    ${ui.photos(job)}
-                    ${ui.remarks(job.remarks)}
+                    ${this.adminSummary(job)}
+                    <div class="job-body" id="jb-${id}">
+                        ${ui.route(job, { contacts: false })}
+                        ${ui.facts(job, { date: job.delivery_date })}
+                        ${ui.photos(job)}
+                        ${ui.remarks(job.remarks)}
+                    </div>
                     ${bidNotice}
+                    ${this.adminToggle(id, open)}
                     <div class="job-foot">
                         ${ui.price('Offered price', price)}
                         <div class="actions-wide">${actions}</div>
