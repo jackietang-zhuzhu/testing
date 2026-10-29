@@ -301,17 +301,19 @@ const ui = {
     // A document attached to a job but stored apart from it, so transporters never receive it:
     //   job.customer_po   = { url, uploaded_at }  the customer's own PO (uploaded after delivery)
     //   job.invoice_file  = { url, uploaded_at }  our invoice (INV), uploaded by the admin, downloadable by the customer
-    docSlip(doc, job, { title, noun, handler, dlName, emptyText = '', download = false, upload = false } = {}) {
+    docSlip(doc, job, { title, noun, handler, dlName, emptyText = '', download = false, upload = false, cls = '' } = {}) {
+        const blockCls = 'remarks do-block' + (cls ? ' ' + this.esc(cls) : '');
+        const sm = cls ? '' : ' btn-sm'; // a highlighted block gets full-size buttons
         const url = doc ? app.safeUrl(doc.url) : '';
         if (!url && !upload) return '';
         const uploadBtn = upload
-            ? `<label class="btn ${url ? 'btn-secondary' : 'btn-primary'} btn-sm" style="cursor:pointer">
+            ? `<label class="btn ${url ? 'btn-secondary' : 'btn-primary'}${sm}" style="cursor:pointer">
                     <i class="ri-upload-2-line"></i> ${url ? 'Replace' : 'Upload'} ${this.esc(noun)}
                     <input type="file" accept="image/*,application/pdf" hidden data-job-id="${this.esc(job.id)}" ${url ? `onclick="if(!confirm('This will replace the ${this.esc(noun)} already uploaded. Continue?')) event.preventDefault()"` : ''} onchange="app.${handler}(this)">
                 </label>`
             : '';
         if (!url) {
-            return `<div class="remarks do-block">
+            return `<div class="${blockCls}">
                 <b>${this.esc(title)}</b>
                 ${emptyText ? `<p style="margin:4px 0 8px;font-size:.8125rem;color:var(--muted)">${this.esc(emptyText)}</p>` : ''}
                 ${uploadBtn}
@@ -329,9 +331,9 @@ const ui = {
                     <img src="${safe}" alt="${this.esc(title)}" loading="lazy">
                 </a>`;
         const dl = download
-            ? `<a class="btn btn-secondary btn-sm" href="${this.esc(this.downloadUrl(url, dlName))}" download><i class="ri-download-2-line"></i> Download</a>`
+            ? `<a class="btn btn-secondary${sm}" href="${this.esc(this.downloadUrl(url, dlName))}" download><i class="ri-download-2-line"></i> Download</a>`
             : '';
-        return `<div class="remarks do-block">
+        return `<div class="${blockCls}">
             <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:4px 12px"><b>${this.esc(title)}</b>${when}</div>
             <div class="photo-strip is-small" style="align-items:center;gap:12px;margin-top:8px">${thumb}${dl}${uploadBtn}</div>
         </div>`;
@@ -2303,12 +2305,12 @@ const app = {
                     </div>
                     <div class="job-body" id="jb-${id}">
                         ${this.customerSteps(stage, job)}
+                        ${ui.poSlip(job, { title: 'Your PO', upload: stage === 'delivered', cls: 'is-prominent' })}
                         ${ui.route(job)}
                         ${ui.facts(job, { date: job.delivery_date })}
                         ${ui.photos(job, true)}
                         ${ui.remarks(job.remarks)}
-                        ${ui.doSlip(job, { showTime: true, timeLabel: 'Delivered' })}
-                        ${ui.poSlip(job, { title: 'Your PO', upload: stage === 'delivered' })}
+                        ${ui.doSlip(job, { showTime: true, timeLabel: 'Delivered', download: true })}
                         ${ui.invSlip(job, { download: true })}
                         ${stage === 'delivered' ? ui.ratingBox(job) : ''}
                         ${foot}
