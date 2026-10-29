@@ -376,19 +376,6 @@ const ui = {
                 <div class="rate-stars" role="radiogroup" aria-label="Rate the transporter from 1 to 5 stars">${[1, 2, 3, 4, 5].map(star).join('')}</div>
             </div>`;
     },
-    // Customer cards: photos, remarks and documents sit in a fold-out so the card stays short. Always visible are
-    // the status, route, load, price and buttons. parts = [{ label, html }], empty ones are skipped. The fold opens
-    // by itself only when wantOpen is true (the customer has something to do), and then remembers what the person chose.
-    fold(id, parts, wantOpen = false) {
-        const list = parts.filter(p => p && p.html);
-        if (!list.length) return '';
-        const saved = app.cardOpen[id];
-        const open = saved === undefined ? wantOpen : saved;
-        return `<details class="more" data-id="${this.esc(id)}"${open ? ' open' : ''} ontoggle="app.rememberFold(this)">
-            <summary><span class="more-title">Details</span><span class="more-list">${list.map(p => this.esc(p.label)).join(' · ')}</span></summary>
-            <div class="more-body">${list.map(p => p.html).join('')}</div>
-        </details>`;
-    },
     // Only jobs that came from a customer have one; jobs the admin posted directly show nothing
     customerLine(job) {
         const c = job && job.customers;
@@ -427,7 +414,6 @@ const app = {
     knownStages: null,
     currentBidsJobId: null,
     uploading: 0,
-    cardOpen: {},            // customer cards: which "Details" folds the person opened or closed
     factory: null,           // customer's saved pickup {loc, link}, or null
     editingHadStops: false,
     submittingOrder: false,
@@ -442,6 +428,7 @@ const app = {
     ratingBusy: null,        // customer: id of the order whose rating is being saved (blocks a second tap meanwhile)
     noRatings: false,        // set when the rating columns are not in job_docs yet (the rating box is then hidden)
     tpMonth: '',             // Transporters tab: chosen month ('' = not chosen yet, 'all' = all time)
+    cardOpen: {},            // customer Orders list: job id -> true (expanded) / false (collapsed). Survives auto-refresh.
 
     async init() {
         document.getElementById('login-form').addEventListener('submit', (e) => this.handleLogin(e));
@@ -456,7 +443,7 @@ const app = {
         document.getElementById('cj-item').addEventListener('change', () => this.toggleCustomerOtherItem());
 		document.getElementById('forgot-password-form').addEventListener('submit', (e) => this.handleForgotPassword(e));
 		document.getElementById('counter-offer-form').addEventListener('submit', (e) => this.submitCounterOffer(e));
-		document.getElementById('job-date').min = this.myDay(new Date()); // Malaysia date, not UTC
+		document.getElementById('job-date').min = new Date().toISOString().split('T')[0];
         btnLogout.addEventListener('click', () => this.handleLogout());
 
         const { data: { session } } = await supabaseClient.auth.getSession();
@@ -466,42 +453,13 @@ const app = {
             this.showView('login');
         }
 
-        // Session ended somewhere else (expired, or logged out in another tab): go back to the login screen
-        // instead of leaving a page that only says "check your connection".
-        supabaseClient.auth.onAuthStateChange((event) => {
-            if (event === 'SIGNED_OUT' && this.currentUser && !this.loggingOut) {
-                // setTimeout: supabase-js must not be called from inside this callback
-                setTimeout(async () => {
-                    await this.handleLogout();
-                    ui.notify('Your session has ended. Please log in again.');
-                }, 0);
-            }
-        });
-
         document.addEventListener('visibilitychange', () => { if (!document.hidden) this.autoRefresh(); });
         this.startAutoRefresh();
     },
 
     // --- AUTHENTICATION FUNCTIONS ---
-    // Runs fn once at a time per key; the button (if any) is disabled meanwhile, so a double tap cannot submit twice
-    async once(key, fn, btn = null) {
-        this.busyKeys = this.busyKeys || {};
-        if (this.busyKeys[key]) return;
-        this.busyKeys[key] = true;
-        if (btn) btn.disabled = true;
-        try { return await fn(); }
-        finally {
-            this.busyKeys[key] = false;
-            if (btn) btn.disabled = false;
-        }
-    },
-
-    handleLogin(e) {
+    async handleLogin(e) {
         e.preventDefault();
-        return this.once('login', () => this.doLogin(), e.submitter || e.target.querySelector('button[type="submit"]'));
-    },
-
-    async doLogin() {
         const email = document.getElementById('login-email').value;
         const password = document.getElementById('login-password').value;
 
@@ -510,7 +468,7 @@ const app = {
         if (error) {
             ui.notify("Login Failed: " + error.message);
         } else {
-            await this.routeUser(data.user);
+            this.routeUser(data.user);
         }
     },
 
@@ -524,12 +482,8 @@ const app = {
         this.showView('register');
     },
 
-    handleRegister(e) {
+    async handleRegister(e) {
         e.preventDefault();
-        return this.once('register', () => this.doRegister(), e.submitter || e.target.querySelector('button[type="submit"]'));
-    },
-
-    async doRegister() {
         const role = document.getElementById('reg-role').value === 'customer' ? 'customer' : 'transporter';
         const company = document.getElementById('reg-company').value;
         const contact = document.getElementById('reg-contact').value;
@@ -561,14 +515,8 @@ const app = {
     },
 
     async handleLogout() {
-        if (this.loggingOut) return;
-        this.loggingOut = true;
-        try { await this.doLogout(); } finally { this.loggingOut = false; }
-    },
-
-    async doLogout() {
 		if (this.banTimer) clearInterval(this.banTimer);
-        try { await supabaseClient.auth.signOut(); } catch (err) { console.warn('Sign out:', err); }
+        await supabaseClient.auth.signOut();
         
         // Wipe local memory
         this.currentUser = null;
@@ -581,7 +529,6 @@ const app = {
         this.knownJobIds = null;
         this.knownStages = null;
         this.currentBidsJobId = null;
-        this.cardOpen = {};
         this.rtMonth = '';
         this.histMonth = { admin: '', customer: '', transporter: '' };
         this.histCounts = { admin: {} };
@@ -625,12 +572,8 @@ const app = {
         this.showView('login');
     },
 	
-	handleForgotPassword(e) {
+	async handleForgotPassword(e) {
         e.preventDefault();
-        return this.once('forgot', () => this.doForgotPassword(), e.submitter || e.target.querySelector('button[type="submit"]'));
-    },
-
-    async doForgotPassword() {
         const email = document.getElementById('forgot-email').value;
 
         const { data, error } = await supabaseClient.auth.resetPasswordForEmail(email, {
@@ -987,12 +930,11 @@ const app = {
     async fetchJobsForRT(silent = false) {
         if (!silent) rtJobsContainer.innerHTML = ui.skeleton(3);
         
-        const { data: jobs, error } = await this.fetchAllRows(() => supabaseClient
+        const { data: jobs, error } = await supabaseClient
             .from('jobs')
             .select('*, customers(company_name, contact_person, phone)')
-            .neq('status', 'archived')
-            .order('created_at', { ascending: false })
-            .order('id'));
+            .neq('status', 'archived') 
+            .order('created_at', { ascending: false });
             
         if (error) { console.error(error); if (!silent) rtJobsContainer.innerHTML = ui.errorBlock('Check your connection and try again.'); return; }
         await this.attachJobDocs(jobs);
@@ -1208,33 +1150,17 @@ const app = {
         // Automatically determine if it should go back to "assigned" or "open" based on its history
         // A job goes back to "assigned" if any sign of an award is left: assignment time, a DO,
         // an accepted bid, or a PO / invoice. Only a job with none of these goes back to "open".
-        // If we cannot read the job, stop: guessing here could turn an awarded job back into an open one.
-        const { data: job, error: jobErr } = await supabaseClient
-            .from('jobs')
-            .select('*, customers(company_name)')
-            .eq('id', jobId)
-            .single();
-        if (jobErr || !job) {
-            ui.notify("Error restoring job: " + ((jobErr && jobErr.message) || 'job not found'));
-            return;
-        }
-        let awarded = !!(job.assigned_at || job.do_url);
+        const { data: job } = await supabaseClient.from('jobs').select('assigned_at, do_url').eq('id', jobId).single();
+        let awarded = !!(job && (job.assigned_at || job.do_url));
         if (!awarded) {
             const [bidRes, docRes] = await Promise.all([
                 supabaseClient.from('bids').select('id').eq('job_id', jobId).eq('status', 'accepted').limit(1),
                 supabaseClient.from('job_docs').select('po_url, invoice_url').eq('job_id', jobId).limit(1)
             ]);
-            if (bidRes.error || docRes.error) {
-                ui.notify("Error restoring job: " + ((bidRes.error || docRes.error).message));
-                return;
-            }
             const doc = docRes.data && docRes.data[0];
             awarded = !!((bidRes.data && bidRes.data.length) || (doc && (doc.po_url || doc.invoice_url)));
         }
-        // A customer's order that was never approved (no approved_at) goes back to the review queue,
-        // not onto the board: it has no posted price yet.
-        const neverApproved = !awarded && !!job.customers && !job.approved_at;
-        const newStatus = awarded ? 'assigned' : (neverApproved ? 'pending_review' : 'open');
+        const newStatus = awarded ? 'assigned' : 'open';
 
         const { error } = await supabaseClient
             .from('jobs')
@@ -1244,7 +1170,7 @@ const app = {
         if (error) {
             ui.notify("Error restoring job: " + error.message);
         } else {
-            ui.notify(newStatus === 'pending_review' ? "Order restored to Requests for review." : "Job successfully restored.");
+            ui.notify("Job successfully restored.");
             this.fetchHistoryForRT();
         }
     },
@@ -1307,14 +1233,12 @@ const app = {
         this.renderTransporterJobs(jobs);
     },
 
-    // Returns the public URL, null when no file was chosen, or false when the upload FAILED
-    // (the person has already been told why). Callers must stop on false instead of carrying on without the photo.
     async uploadJobPhoto(fileInputId) {
         const fileInput = document.getElementById(fileInputId);
         if (!fileInput || !fileInput.files || fileInput.files.length === 0) return null;
 
         const file = fileInput.files[0];
-        const fileExt = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
+        const fileExt = file.name.split('.').pop();
         const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
         const filePath = `public/${fileName}`;
 
@@ -1325,7 +1249,7 @@ const app = {
         if (error) {
             console.error('Upload error:', error);
             ui.notify('Failed to upload photo: ' + error.message);
-            return false;
+            return null;
         }
 
         const { data: publicUrlData } = supabaseClient.storage
@@ -1367,13 +1291,7 @@ const app = {
         submitBtn.classList.add('opacity-75');
 
         const photo1Url = await this.uploadJobPhoto('job-photo-1');
-        const photo2Url = photo1Url === false ? false : await this.uploadJobPhoto('job-photo-2');
-        if (photo1Url === false || photo2Url === false) {
-            // an upload failed: do not publish a job that is missing its photo
-            submitBtn.innerText = originalText;
-            submitBtn.disabled = false;
-            return;
-        }
+        const photo2Url = await this.uploadJobPhoto('job-photo-2');
 
         const newJob = {
             source_loc: document.getElementById('job-source').value,
@@ -1415,11 +1333,7 @@ const app = {
         }
     },
 	
-	quickAccept(jobId, offeredPrice) {
-        return this.once('accept-' + jobId, () => this.doQuickAccept(jobId, offeredPrice));
-    },
-
-	async doQuickAccept(jobId, offeredPrice) {
+	async quickAccept(jobId, offeredPrice) {
 		await this.refreshTransporterProfile();
 		if (this.isBanned()) {
             ui.notify("Your account is currently suspended. You cannot accept or bid on jobs.");
@@ -1517,12 +1431,8 @@ const app = {
         this.showView('counterOffer');
     },
 	
-    submitCounterOffer(e) {
+    async submitCounterOffer(e) {
         e.preventDefault();
-        return this.once('counter', () => this.doCounterOffer(), e.submitter || e.target.querySelector('button[type="submit"]'));
-    },
-
-    async doCounterOffer() {
         await this.refreshTransporterProfile();
         if (this.isBanned()) {
             ui.notify("Your account is currently suspended. You cannot accept or bid on jobs.");
@@ -1587,7 +1497,7 @@ const app = {
 
         const { data: job, error: jobError } = await supabaseClient
             .from('jobs')
-            .select('*, customers(company_name, contact_person, phone)')
+            .select('*')
             .eq('id', jobId)
             .single();
 
@@ -1621,7 +1531,6 @@ const app = {
                     ${bidCount ? ui.pill(`${bidCount} bid${bidCount === 1 ? '' : 's'}`, 'info') : ui.pill('No bids yet', 'neutral')}
                     <span class="job-time">${ui.posted(job.created_at)}</span>
                 </div>
-                ${ui.customerLine(job)}
                 ${ui.route(job)}
                 ${ui.facts(job, { date: job.delivery_date, dateLabel: 'Original date', delivered: !!job.do_url })}
                 ${ui.photos(job, true)}
@@ -1629,7 +1538,6 @@ const app = {
                 ${ui.doSlip(job, { showTime: true, download: true })}
                 ${ui.poSlip(job, { download: true })}
                 ${ui.invSlip(job, { download: true, upload: job.status === 'assigned' && !!job.do_url })}
-                ${ui.ratingLine(job)}
                 <div class="job-foot">
                     ${ui.price('Original budget', originalPrice)}
                 </div>
@@ -1687,13 +1595,11 @@ const app = {
                 ? `<div class="notice notice-warn"><i class="ri-calendar-schedule-line"></i><span>New date proposed: <b>${ui.fmtDate(bid.proposed_date)}</b></span></div>`
                 : '';
 
-            // Only an open job can still be awarded; once it is assigned the other bids are just history
-            const canAward = job.status === 'open' && bid.status === 'submitted';
-            const action = canAward
+            const action = bid.status === 'submitted'
                 ? `<button class="btn btn-go"
                            data-bid-id="${ui.esc(bid.id)}" data-job-id="${ui.esc(jobId)}" data-price="${price}"
                            onclick="app.awardJob(this.dataset.bidId, this.dataset.jobId, Number(this.dataset.price))">Award job</button>`
-                : ui.pill(bid.status === 'accepted' ? 'Awarded' : (bid.status === 'submitted' ? 'Not awarded' : bid.status), bid.status === 'accepted' ? 'go' : 'neutral', bid.status === 'accepted' ? 'ri-check-line' : '');
+                : ui.pill(bid.status === 'accepted' ? 'Awarded' : bid.status, bid.status === 'accepted' ? 'go' : 'neutral', bid.status === 'accepted' ? 'ri-check-line' : '');
 
             return `
                 <article class="job-card bid-card">
@@ -1724,58 +1630,35 @@ const app = {
     },
 
     async awardJob(bidId, jobId, acceptedPrice) {
-        if (this.awarding) return; // a second tap while the first is still running
         if (!confirm("Are you sure you want to award the job to this transporter?")) return;
-        this.awarding = true;
-        try {
-            // 1) Claim the job first, only if it is still open. If someone (or another tab) already
-            //    awarded it, this updates nothing and we stop, so a job can never be awarded twice.
-            const { data: claimed, error: jobError } = await supabaseClient
-                .from('jobs')
-                .update({
-                    status: 'assigned',
-                    accepted_price: acceptedPrice,
-                    assigned_at: new Date().toISOString()
-                })
-                .eq('id', jobId)
-                .eq('status', 'open')
-                .select('id');
 
-            if (jobError) {
-                ui.notify("Error updating job status: " + jobError.message);
-                return;
-            }
-            if (!claimed || claimed.length === 0) {
-                ui.notify("This job is no longer open, so it cannot be awarded. Please check the bids again.");
-                this.viewBids(jobId);
-                return;
-            }
+        const { error: bidError } = await supabaseClient
+            .from('bids')
+            .update({ status: 'accepted' })
+            .eq('id', bidId);
 
-            // 2) Mark the winning bid. If this fails, put the job back to open so nothing is left half-done.
-            const { error: bidError } = await supabaseClient
-                .from('bids')
-                .update({ status: 'accepted' })
-                .eq('id', bidId)
-                .eq('job_id', jobId);
-
-            if (bidError) {
-                const { error: undoError } = await supabaseClient
-                    .from('jobs')
-                    .update({ status: 'open', accepted_price: null, assigned_at: null })
-                    .eq('id', jobId)
-                    .eq('status', 'assigned');
-                if (undoError) console.error('Could not roll back the award:', undoError);
-                ui.notify("Error awarding job: " + bidError.message + (undoError ? " (the job may need to be checked manually)" : ""));
-                this.viewBids(jobId);
-                return;
-            }
-
-            ui.notify("Job awarded successfully!");
-            this.showView('rtHome');
-            this.fetchJobsForRT();
-        } finally {
-            this.awarding = false;
+        if (bidError) {
+            ui.notify("Error awarding job: " + bidError.message);
+            return;
         }
+
+        const { error: jobError } = await supabaseClient
+            .from('jobs')
+            .update({ 
+                status: 'assigned',
+                accepted_price: acceptedPrice,
+                assigned_at: new Date().toISOString()
+            })
+            .eq('id', jobId);
+
+        if (jobError) {
+            ui.notify("Error updating job status: " + jobError.message);
+            return;
+        }
+
+        ui.notify("Job awarded successfully!");
+        this.showView('rtHome');
+        this.fetchJobsForRT();
     },
 	
 	async deleteJob(jobId) {
@@ -1878,7 +1761,7 @@ const app = {
         this.editingHadStops = mode === 'edit' && ui.stops(job).length > 0;
         this.editingHadContacts = mode === 'edit' && ui.hasContacts(job);
         this.toggleCustomerOtherItem();
-        document.getElementById('cj-date').min = this.myDay(new Date()); // Malaysia date, not UTC
+        document.getElementById('cj-date').min = new Date().toISOString().split('T')[0];
 
         document.getElementById('cj-title').textContent =
             mode === 'edit' ? 'Edit order' : (mode === 'copy' ? 'Book again' : 'New order');
@@ -2037,11 +1920,7 @@ const app = {
         };
 
         const photo1Url = await this.uploadJobPhoto('cj-photo-1');
-        const photo2Url = photo1Url === false ? false : await this.uploadJobPhoto('cj-photo-2');
-        if (photo1Url === false || photo2Url === false) {
-            restore(); // a photo failed to upload: keep the summary open and do not place an order without it
-            return;
-        }
+        const photo2Url = await this.uploadJobPhoto('cj-photo-2');
 
         const payload = {
             p_source_loc: document.getElementById('cj-source').value.trim(),
@@ -2071,35 +1950,20 @@ const app = {
             return;
         }
 
-        // Extra drop-offs and contacts are saved in follow-up steps, so the existing submit/update functions stay untouched.
-        // Each is skipped when not used. (For an edited order that used to have them, an empty value is sent so they get cleared.)
-        let jobId = editing ? editedJobId : this.extractJobId(rpcData);
-        const contacts = this.collectContacts('cj');
-        const needFollowUp = !!(extraStops.length || this.editingHadStops || contacts || this.editingHadContacts);
-        if (!jobId && needFollowUp) {
-            // submit_customer_job did not return the id: look up our newest order once and use that explicit id
-            // for both steps, instead of letting each step guess "my newest request" on its own.
-            const { data: newest } = await supabaseClient
-                .from('customer_jobs').select('id').order('created_at', { ascending: false }).order('id').limit(1);
-            jobId = (newest && newest[0] && newest[0].id) || null;
-        }
-        // The follow-up steps are retried a couple of times before we give up.
-        const withRetry = async (fn) => {
-            let res;
-            for (let attempt = 0; attempt < 3; attempt++) {
-                res = await fn();
-                if (!res.error) break;
-                await new Promise(r => setTimeout(r, 400 * (attempt + 1)));
-            }
-            return res;
-        };
+        // Extra drop-offs are saved in a second step, so the existing submit/update functions stay untouched.
+        // It is skipped entirely when not used. (For an edited order that used to have them,
+        // an empty list is sent so they get cleared.)
+        const jobId = editing ? editedJobId : this.extractJobId(rpcData); // null = "my newest request"
         const failed = [];
         if (extraStops.length || this.editingHadStops) {
-            const { error: stopsError } = await withRetry(() => supabaseClient.rpc('set_my_job_stops', { p_stops: extraStops, p_job_id: jobId }));
+            const { error: stopsError } = await supabaseClient.rpc('set_my_job_stops', { p_stops: extraStops, p_job_id: jobId });
             if (stopsError) { console.error(stopsError); failed.push('the extra drop-offs'); }
         }
+
+        // Same for the contacts (person in charge + phone): their own step, and skipped when there is nothing to save or clear
+        const contacts = this.collectContacts('cj');
         if (contacts || this.editingHadContacts) {
-            const { error: contactsError } = await withRetry(() => supabaseClient.rpc('set_my_job_contacts', { p_contacts: contacts, p_job_id: jobId }));
+            const { error: contactsError } = await supabaseClient.rpc('set_my_job_contacts', { p_contacts: contacts, p_job_id: jobId });
             if (contactsError) { console.error(contactsError); failed.push('the contact details'); }
         }
 
@@ -2207,17 +2071,10 @@ const app = {
     async attachJobDocs(jobs) {
         if (!jobs || !jobs.length) return jobs;
         const docCols = 'job_id, po_url, po_uploaded_at, invoice_url, invoice_uploaded_at';
-        // Ask only for the jobs on screen, in chunks (one row per job, so a chunk never hits the 1000-row limit)
-        const ids = jobs.map(j => j.id);
-        const load = async (cols) => {
-            const out = [];
-            for (let i = 0; i < ids.length; i += 150) {
-                const { data, error } = await supabaseClient
-                    .from('job_docs').select(cols).in('job_id', ids.slice(i, i + 150));
-                if (error) return { data: null, error };
-                out.push(...(data || []));
-            }
-            return { data: out, error: null };
+        const load = (cols) => {
+            let query = supabaseClient.from('job_docs').select(cols);
+            if (jobs.length === 1) query = query.eq('job_id', jobs[0].id);
+            return query;
         };
         let { data, error } = await load(this.noRatings ? docCols : docCols + ', rating, rated_at');
         if (error && !this.noRatings && /rating|rated_at/i.test(error.message || '')) {
@@ -2242,7 +2099,7 @@ const app = {
     // (the customer_jobs view itself is left alone). If it is not there yet the orders still show without them.
     async attachJobExtras(jobs) {
         if (!jobs || !jobs.length || this.noJobExtras) return jobs;
-        const { data, error } = await this.fetchAllRows(() => supabaseClient.from('customer_job_extras').select('job_id, contacts, dos').order('job_id'));
+        const { data, error } = await supabaseClient.from('customer_job_extras').select('job_id, contacts, dos');
         if (error) {
             console.error('Job extras load error:', error);
             if (/does not exist|schema cache|relation/i.test(error.message || '')) this.noJobExtras = true; // stop asking until the page is reloaded
@@ -2309,11 +2166,10 @@ const app = {
         if (!silent) container.innerHTML = ui.skeleton(2);
 
         // customer_jobs is a database view that only returns this customer's own jobs, with no prices or bids
-        const { data: jobs, error } = await this.fetchAllRows(() => supabaseClient
+        const { data: jobs, error } = await supabaseClient
             .from('customer_jobs')
             .select('*')
-            .order('created_at', { ascending: false })
-            .order('id'));
+            .order('created_at', { ascending: false });
 
         if (error) {
             console.error(error);
@@ -2418,29 +2274,88 @@ const app = {
                 ? `<div class="job-foot">${price}${actions.length ? `<div class="actions" style="flex-wrap:wrap;justify-content:flex-end">${actions.join('')}</div>` : ''}</div>`
                 : '';
 
+            // Collapsed / expanded. First time we see an order: finished (delivered) orders start collapsed,
+            // everything else starts expanded. After that we keep whatever the customer chose.
+            if (!(job.id in this.cardOpen)) this.cardOpen[job.id] = stage !== 'delivered';
+            const open = this.cardOpen[job.id];
+
+            // One-line summary shown only while the card is collapsed
+            const dropCount = ui.stops(job).length + 1;
+            const sumRoute = `${ui.esc(ui.place(job.source_loc))} <span class="sum-arrow" aria-hidden="true">→</span> ${ui.esc(ui.place(job.dest_loc))}${dropCount > 1 ? ` <span class="sum-more">+${dropCount - 1} more</span>` : ''}`;
+            const sumMeta = [
+                `${ui.esc(job.quantity)} ${ui.esc(job.item_desc)}`,
+                job.delivery_date ? `Delivery ${ui.fmtDate(job.delivery_date)}` : ''
+            ].filter(Boolean).join(' · ');
+
             return `
-                <article class="job-card">
+                <article class="job-card${open ? '' : ' is-collapsed'}" data-job="${id}">
                     <div class="job-head">
                         ${pill}
                         <span class="job-time">${ui.posted(job.created_at, 'Ordered')}</span>
                     </div>
-                    ${this.customerSteps(stage, job)}
-                    ${ui.route(job)}
-                    ${ui.facts(job, { date: job.delivery_date })}
-                    ${ui.fold(job.id, [
-                        { label: ([job.photo_1_url, job.photo_2_url].filter(u => app.safeUrl(u)).length) + ' photo' + ([job.photo_1_url, job.photo_2_url].filter(u => app.safeUrl(u)).length === 1 ? '' : 's'), html: ui.photos(job, true) },
-                        { label: 'Remarks', html: ui.remarks(job.remarks) },
-                        { label: 'DO', html: ui.doSlip(job, { showTime: true, timeLabel: 'Delivered' }) },
-                        { label: 'PO', html: ui.poSlip(job, { title: 'Your PO', upload: stage === 'delivered' }) },
-                        { label: 'INV', html: ui.invSlip(job, { download: true }) },
-                        { label: job.customer_rating ? 'Your rating' : 'Rate delivery', html: stage === 'delivered' ? ui.ratingBox(job) : '' }
-                    ], stage === 'delivered' && !job.customer_po)}
-                    ${foot}
+                    <div class="job-summary">
+                        <div class="sum-route">${sumRoute}</div>
+                        <div class="sum-meta">${sumMeta}</div>
+                    </div>
+                    <div class="job-body" id="jb-${id}">
+                        ${this.customerSteps(stage, job)}
+                        ${ui.route(job)}
+                        ${ui.facts(job, { date: job.delivery_date })}
+                        ${ui.photos(job, true)}
+                        ${ui.remarks(job.remarks)}
+                        ${ui.doSlip(job, { showTime: true, timeLabel: 'Delivered' })}
+                        ${ui.poSlip(job, { title: 'Your PO', upload: stage === 'delivered' })}
+                        ${ui.invSlip(job, { download: true })}
+                        ${stage === 'delivered' ? ui.ratingBox(job) : ''}
+                        ${foot}
+                    </div>
+                    <button type="button" class="card-more" data-id="${id}" aria-expanded="${open}" aria-controls="jb-${id}" onclick="app.toggleCard(this.dataset.id)">
+                        <span class="more-label">${open ? 'Show less' : 'Show more'}</span><i class="ri-arrow-down-s-line chev" aria-hidden="true"></i>
+                    </button>
                 </article>
             `;
         }).join('');
 
-        container.innerHTML = chips + cards;
+        const toolbar = `<div class="list-bar">${chips}<button type="button" class="link-btn list-toggle-all" id="cust-toggle-all" onclick="app.toggleAllCards()"></button></div>`;
+        container.innerHTML = toolbar + cards;
+        this.syncToggleAll();
+    },
+
+    // Open or close one order card. Only that card is touched (the list is not redrawn), so the scroll position stays put.
+    toggleCard(jobId) {
+        const id = String(jobId);
+        const card = [...document.querySelectorAll('#customer-jobs-container .job-card')].find(el => el.dataset.job === id);
+        if (!card) return;
+        this.setCardOpen(card, card.classList.contains('is-collapsed')); // collapsed now -> open it, and vice versa
+        this.syncToggleAll();
+    },
+
+    setCardOpen(card, open) {
+        card.classList.toggle('is-collapsed', !open);
+        const btn = card.querySelector('.card-more');
+        if (btn) {
+            btn.setAttribute('aria-expanded', String(open));
+            const label = btn.querySelector('.more-label');
+            if (label) label.textContent = open ? 'Show less' : 'Show more';
+        }
+        this.cardOpen[card.dataset.job] = open;
+    },
+
+    // "Collapse all" when every card shown is open, otherwise "Expand all". Only the cards currently shown are affected.
+    toggleAllCards() {
+        const cards = [...document.querySelectorAll('#customer-jobs-container .job-card')];
+        const allOpen = cards.every(c => !c.classList.contains('is-collapsed'));
+        cards.forEach(c => this.setCardOpen(c, !allOpen));
+        this.syncToggleAll();
+    },
+
+    syncToggleAll() {
+        const btn = document.getElementById('cust-toggle-all');
+        if (!btn) return;
+        const cards = [...document.querySelectorAll('#customer-jobs-container .job-card')];
+        const allOpen = cards.length > 0 && cards.every(c => !c.classList.contains('is-collapsed'));
+        btn.textContent = allOpen ? 'Collapse all' : 'Expand all';
+        btn.style.display = cards.length > 1 ? '' : 'none'; // pointless with a single order
     },
 
     // ==========================================
@@ -2483,14 +2398,12 @@ const app = {
                     </div>
                     ${ui.route(job)}
                     ${ui.facts(job, { date: job.delivery_date })}
-                    ${ui.fold(job.id, [
-                        { label: ([job.photo_1_url, job.photo_2_url].filter(u => app.safeUrl(u)).length) + ' photo' + ([job.photo_1_url, job.photo_2_url].filter(u => app.safeUrl(u)).length === 1 ? '' : 's'), html: ui.photos(job, true) },
-                        { label: 'Remarks', html: ui.remarks(job.remarks) },
-                        { label: 'DO', html: ui.doSlip(job, { showTime: true, timeLabel: 'Delivered', download: true }) },
-                        { label: 'PO', html: ui.poSlip(job) },
-                        { label: 'INV', html: ui.invSlip(job, { download: true }) },
-                        { label: job.customer_rating ? 'Your rating' : 'Rate delivery', html: delivered ? ui.ratingBox(job) : '' }
-                    ])}
+                    ${ui.photos(job, true)}
+                    ${ui.remarks(job.remarks)}
+                    ${ui.doSlip(job, { showTime: true, timeLabel: 'Delivered', download: true })}
+                    ${ui.poSlip(job)}
+                    ${ui.invSlip(job, { download: true })}
+                    ${delivered ? ui.ratingBox(job) : ''}
                     <div class="job-foot">
                         ${price}
                         ${again ? `<div class="actions">${again}</div>` : ''}
@@ -2651,13 +2564,12 @@ const app = {
         const container = document.getElementById('my-jobs-container');
         if (!silent) container.innerHTML = ui.skeleton(2);
 
-        const { data: bids, error } = await this.fetchAllRows(() => supabaseClient
+        const { data: bids, error } = await supabaseClient
             .from('bids')
             .select('*, jobs(*)')
             .eq('transporter_id', this.currentUser.id)
             .eq('status', 'accepted')
-            .order('created_at', { ascending: false })
-            .order('id'));
+            .order('created_at', { ascending: false });
 
         if (error) {
             console.error(error);
@@ -2897,6 +2809,9 @@ const app = {
                     ${ui.customerLine(job)}
                     ${ui.route(job)}
                     ${ui.facts(job, { date: job.delivery_date, delivered: isAssigned && !!job.do_url })}
+                    ${ui.poSlip(job, { download: true })}
+                    ${ui.invSlip(job, { download: true, upload: isAssigned && !!job.do_url })}
+                    ${ui.ratingLine(job)}
                     <div class="job-foot">
                         ${ui.price('Budget', job.offered_price)}
                         <div class="actions">
@@ -3012,8 +2927,7 @@ const app = {
             .from('jobs')
             .select('*')
             .eq('status', 'assigned')
-            .order('assigned_at', { ascending: false, nullsFirst: false })
-            .order('id')
+            .order('created_at', { ascending: false })
             .limit(5);
             
         if (error) {
@@ -3061,10 +2975,6 @@ const app = {
         this.fetchTransporterStats();
     },
 
-    rememberFold(el) {
-        if (el && el.dataset) this.cardOpen[el.dataset.id] = el.open;
-    },
-
     // Reads every row, 1000 at a time (the API returns at most 1000 per request)
     async fetchAllRows(build) {
         const out = [];
@@ -3083,7 +2993,7 @@ const app = {
         if (!silent) container.innerHTML = ui.skeleton(3, 220);
 
         const [bidsRes, tpRes, cancelRes, ratingsRes] = await Promise.all([
-            this.fetchAllRows(() => supabaseClient.from('bids').select('*, jobs(*)').order('created_at', { ascending: false }).order('id')),
+            this.fetchAllRows(() => supabaseClient.from('bids').select('*, jobs(*)').order('created_at', { ascending: false })),
             supabaseClient.from('transporters').select('id, company_name, contact_person, phone, banned_until, last_active_at'),
             supabaseClient.from('job_cancellations').select('job_id, transporter_id, delivery_date, cancelled_at'),
             this.fetchAllRows(() => supabaseClient.from('job_docs').select('job_id, rating, rated_at, rated_transporter_id').not('rating', 'is', null).order('job_id'))
@@ -3222,24 +3132,8 @@ const app = {
             });
         });
 
-        // Every time a job was taken back from a transporter counts against their on-time rate
-        // (the number in the "Taken back" box is exactly the number held against them).
-        // Exception: an accidental Undo. If the same job was given back to the same transporter within
-        // UNDO_GRACE_MIN minutes of being taken back, it is not counted at all.
-        const UNDO_GRACE_MIN = 10;
-        const reAwardedAt = new Map(); // "job|transporter" -> when the job was awarded to them (latest)
-        d.bids.forEach(b => {
-            if (b.status !== 'accepted' || !b.jobs.assigned_at) return;
-            const key = `${b.job_id}|${b.transporter_id}`;
-            const t = new Date(b.jobs.assigned_at).getTime();
-            if (!(reAwardedAt.get(key) >= t)) reAwardedAt.set(key, t);
-        });
         d.cancels.forEach(c => {
-            if (!inMonth(this.monthKey(c.delivery_date))) return;
-            const gone = new Date(c.cancelled_at).getTime();
-            const back = reAwardedAt.get(`${c.job_id}|${c.transporter_id}`);
-            if (back !== undefined && !isNaN(gone) && back >= gone && back - gone <= UNDO_GRACE_MIN * 60000) return;
-            get(c.transporter_id).cancelled++;
+            if (inMonth(this.monthKey(c.delivery_date))) get(c.transporter_id).cancelled++;
         });
 
         // Customer ratings count in the delivery month of the job they belong to
@@ -3279,14 +3173,14 @@ const app = {
         const box = (value, label, tone = '') => `<div class="tp-stat${tone ? ' is-' + tone : ''}"><b>${value}</b><span>${label}</span></div>`;
         const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
-        container.innerHTML = note + rows.map(({ id, s, p }) => {
+        container.innerHTML = note + rows.map(({ s, p }) => {
             const tel = String(p.phone || '').replace(/[^\d+]/g, '');
             const phoneHtml = p.phone
                 ? (tel ? `<a href="tel:${ui.esc(tel)}"><i class="ri-phone-line"></i>${ui.esc(p.phone)}</a>` : `<span><i class="ri-phone-line"></i>${ui.esc(p.phone)}</span>`)
                 : '';
             const banned = p.banned_until && new Date(p.banned_until).getTime() > Date.now();
 
-            const timed = s.onTime + s.late + s.cancelled;
+            const timed = s.onTime + s.late;
             const rate = timed ? Math.round(s.onTime / timed * 100) : null;
             const avgRating = s.ratingCount ? s.ratingSum / s.ratingCount : 0;
             const pills = [];
@@ -3308,14 +3202,6 @@ const app = {
                         <div class="tp-line">${ui.stars(avgRating)}<span>${avgRating.toFixed(1)} out of 5 from ${plural(s.ratingCount, 'rating')}</span></div></div>`
                 : '';
 
-            // One line that stays visible when the card is folded: the numbers you check first
-            const sumBits = [`<b>${s.awarded}</b> awarded`, `<b>${s.delivered}</b> delivered`];
-            if (s.inProgress) sumBits.push(`<b>${s.inProgress}</b> in progress`);
-            if (d.cancelOk && s.cancelled) sumBits.push(`<span class="tp-bad"><b>${s.cancelled}</b> taken back</span>`);
-            if (s.late) sumBits.push(`<span class="tp-warn"><b>${s.late}</b> late</span>`);
-            if (s.overdue) sumBits.push(`<span class="tp-bad"><b>${s.overdue}</b> overdue</span>`);
-            const summary = sumBits.join(' &middot; ');
-
             const places = Object.values(s.places).sort((x, y) => y.n - x.n || x.label.localeCompare(y.label)).slice(0, 4);
             const placesHtml = places.length
                 ? places.map(x => `${ui.esc(x.label)} <span class="hint">&times;${x.n}</span>`).join(' &middot; ')
@@ -3334,31 +3220,28 @@ const app = {
                         </div>
                         <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">${pills.join('')}</div>
                     </div>
-                    <p class="tp-summary">${summary}</p>
-                    ${ui.fold('tp-' + id, [
-                        { label: 'Stats', html: `<div class="tp-stats">
-                            ${box(s.awarded, 'Awarded')}
-                            ${box(s.delivered, 'Delivered', s.delivered ? 'ok' : '')}
-                            ${box(s.inProgress, 'In progress')}
-                            ${d.cancelOk ? box(s.cancelled, 'Taken back', s.cancelled ? 'stop' : '') : box('&ndash;', 'Taken back')}
-                            ${box(s.onTime, 'On time', s.onTime ? 'ok' : '')}
-                            ${box(s.late, 'Late', s.late ? 'warn' : '')}
-                            ${box(s.overdue, 'Overdue', s.overdue ? 'stop' : '')}
-                            ${box(rate === null ? '&ndash;' : rate + '%', 'On-time rate')}
-                        </div>` },
-                        { label: 'Pricing', html: `<div class="remarks">
-                            <b>Pricing</b>
-                            <div class="tp-line">
-                                <span>${plural(s.bids, 'bid')}: ${s.quick} at our price, ${s.counter} counter-offer${s.counter === 1 ? '' : 's'}</span>
-                            </div>
-                            ${s.awarded ? `<div class="tp-line"><span>Awarded: ${s.atBudget} at our price, ${s.viaCounter} after counter-offer</span>${avgPill}</div>` : ''}
-                        </div>` },
-                        { label: 'Common areas', html: `<div class="remarks">
-                            <b>Common areas</b>
-                            <div class="tp-line">${placesHtml}</div>
-                        </div>` },
-                        { label: 'Ratings', html: ratingHtml }
-                    ])}
+                    <div class="tp-stats">
+                        ${box(s.awarded, 'Awarded')}
+                        ${box(s.delivered, 'Delivered', s.delivered ? 'ok' : '')}
+                        ${box(s.inProgress, 'In progress')}
+                        ${d.cancelOk ? box(s.cancelled, 'Taken back', s.cancelled ? 'stop' : '') : box('&ndash;', 'Taken back')}
+                        ${box(s.onTime, 'On time', s.onTime ? 'ok' : '')}
+                        ${box(s.late, 'Late', s.late ? 'warn' : '')}
+                        ${box(s.overdue, 'Overdue', s.overdue ? 'stop' : '')}
+                        ${box(rate === null ? '&ndash;' : rate + '%', 'On-time rate')}
+                    </div>
+                    <div class="remarks">
+                        <b>Pricing</b>
+                        <div class="tp-line">
+                            <span>${plural(s.bids, 'bid')}: ${s.quick} at our price, ${s.counter} counter-offer${s.counter === 1 ? '' : 's'}</span>
+                        </div>
+                        ${s.awarded ? `<div class="tp-line"><span>Awarded: ${s.atBudget} at our price, ${s.viaCounter} after counter-offer</span>${avgPill}</div>` : ''}
+                    </div>
+                    <div class="remarks">
+                        <b>Common areas</b>
+                        <div class="tp-line">${placesHtml}</div>
+                    </div>
+                    ${ratingHtml}
                 </article>
             `;
         }).join('');
