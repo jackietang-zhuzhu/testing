@@ -2181,7 +2181,6 @@ const app = {
             return;
         }
         await this.attachJobDocs(jobs);
-        await this.attachJobExtras(jobs);
         if (silent && !this.viewIs('customerHome', 'customerHistory')) return;
         // jobs the admin removed (archived) are not shown to customers
         const visible = (jobs || []).filter(j => j.status !== 'archived');
