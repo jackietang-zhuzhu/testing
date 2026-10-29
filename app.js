@@ -619,6 +619,7 @@ const app = {
 
         if (customer) {
             this.currentUserRole = 'customer';
+            this.loadFactory().catch(() => {}); // fetch the saved primary address now, so New order can fill it in at once
             navs.container.classList.add('hidden'); // no bottom tabs for customers yet
             navs.rt.classList.replace('flex', 'hidden');
             navs.transporter.classList.replace('flex', 'hidden');
@@ -1782,12 +1783,17 @@ const app = {
 
         // Saved primary address: show the shortcut button, and for a brand-new job fill in the pickup.
         // The customer can still overwrite it, and drop-off is always left empty.
+        // The address is normally already loaded (see routeUser), so it is filled in straight away with no waiting.
         this.updateFactoryButton();
+        const filledWith = (mode === 'new' && this.factory) ? this.factory.loc : null;
+        if (filledWith !== null) this.useFactory();
+        // Then check again quietly: covers "not loaded yet", and an address that was changed on another device.
         this.loadFactory().then(factory => {
             this.updateFactoryButton();
             if (!factory || mode !== 'new' || this.currentView !== 'customerNewJob') return;
             const src = document.getElementById('cj-source');
-            if (!src.value.trim()) this.useFactory(); // never overwrite something already typed
+            const untouched = filledWith !== null && src.value === filledWith; // still exactly what we filled in
+            if (!src.value.trim() || (untouched && factory.loc !== filledWith)) this.useFactory(); // never overwrite something typed
         });
     },
 
