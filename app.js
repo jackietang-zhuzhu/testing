@@ -2468,12 +2468,9 @@ const app = {
         container.innerHTML = jobs.map(job => {
             const id = ui.esc(job.id);
             const delivered = !!job.do_url;
-            const pill = delivered
-                ? ui.pill('Delivered', 'go', 'ri-check-double-line')
-                : ui.pill('Removed', 'neutral', 'ri-archive-line');
-            const again = delivered
-                ? `<button class="btn btn-secondary btn-sm" data-id="${id}" onclick="app.openCustomerCopy(this.dataset.id)"><i class="ri-repeat-line"></i> Book again</button>`
-                : '';
+            // Everything on the History page counts as completed
+            const pill = ui.pill('Completed', 'go', 'ri-check-double-line');
+            const again = `<button class="btn btn-secondary btn-sm" data-id="${id}" onclick="app.openCustomerCopy(this.dataset.id)"><i class="ri-repeat-line"></i> Book again</button>`;
             const price = job.customer_expected_price != null ? ui.price('Your expected price', job.customer_expected_price) : '<span></span>';
             if (!(job.id in this.cardOpen)) this.cardOpen[job.id] = false;
             const open = this.cardOpen[job.id];
@@ -2490,7 +2487,7 @@ const app = {
                         ${ui.photos(job, true)}
                         ${ui.remarks(job.remarks)}
                         ${ui.doSlip(job, { showTime: true, timeLabel: 'Delivered', download: true })}
-                        ${ui.poSlip(job)}
+                        ${ui.poSlip(job, { title: 'Your PO', upload: true, cls: 'is-prominent' })}
                         ${ui.invSlip(job, { download: true })}
                         ${delivered ? ui.ratingBox(job) : ''}
                     </div>
