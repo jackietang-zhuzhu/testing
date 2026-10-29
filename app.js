@@ -2466,6 +2466,8 @@ const app = {
         const tel = String(c.phone || '').replace(/[^\d+]/g, '');
         const expected = Number(job.customer_expected_price) || 0;
 
+        // Everything below is editable: the admin does not always follow what the customer entered (especially the price).
+        // Field ids use the prefix "rv" so the shared drop-off helpers (addStop, collectStops, collectContacts) work here too.
         container.innerHTML = `
             <article class="job-card summary">
                 <div class="job-head">
@@ -2477,37 +2479,198 @@ const app = {
                     ${ui.esc(c.contact_person || '')}
                     ${c.phone ? ` &middot; ${tel ? `<a href="tel:${ui.esc(tel)}"><i class="ri-phone-line"></i> ${ui.esc(c.phone)}</a>` : ui.esc(c.phone)}` : ''}
                 </p>
-                ${ui.route(job)}
-                ${ui.facts(job, { date: job.delivery_date })}
                 ${ui.photos(job, true)}
-                ${ui.remarks(job.remarks)}
                 ${ui.poSlip(job, { download: true })}
                 <div class="job-foot">
                     ${ui.price('Customer expected price', expected)}
                 </div>
             </article>
 
-            <form id="approve-draft-form" class="panel form-stack" style="gap:16px">
-                <span class="hint">This job will be posted to transporters at RM ${ui.money(expected)}, the price the customer entered.</span>
+            <form id="approve-draft-form" class="panel form-stack" style="gap:20px">
+                <span class="hint">You can change any detail below before posting. The customer's own request is not changed.</span>
+
+                <fieldset class="fieldset">
+                    <legend class="fieldset-title">Route</legend>
+                    <div class="field">
+                        <label class="label" for="rv-source">Pickup location</label>
+                        <input type="text" id="rv-source" class="input" required>
+                    </div>
+                    <div class="field">
+                        <label class="label" for="rv-source-link">Pickup map link (optional)</label>
+                        <input type="url" id="rv-source-link" placeholder="https://maps.app.goo.gl/..." class="input">
+                    </div>
+                    <div class="field-row">
+                        <div class="field">
+                            <label class="label" for="rv-source-pic">Pickup person in charge (optional)</label>
+                            <input type="text" id="rv-source-pic" class="input" maxlength="80" autocomplete="off">
+                        </div>
+                        <div class="field">
+                            <label class="label" for="rv-source-phone">Pickup contact number (optional)</label>
+                            <input type="tel" id="rv-source-phone" class="input" inputmode="tel" minlength="7" maxlength="20" autocomplete="off">
+                        </div>
+                    </div>
+                    <div class="field">
+                        <label class="label" for="rv-dest">Drop-off location</label>
+                        <input type="text" id="rv-dest" class="input" required>
+                    </div>
+                    <div class="field">
+                        <label class="label" for="rv-dest-link">Drop-off map link (optional)</label>
+                        <input type="url" id="rv-dest-link" placeholder="https://maps.app.goo.gl/..." class="input">
+                    </div>
+                    <div class="field-row">
+                        <div class="field">
+                            <label class="label" for="rv-dest-pic">Drop-off person in charge (optional)</label>
+                            <input type="text" id="rv-dest-pic" class="input" maxlength="80" autocomplete="off">
+                        </div>
+                        <div class="field">
+                            <label class="label" for="rv-dest-phone">Drop-off contact number (optional)</label>
+                            <input type="tel" id="rv-dest-phone" class="input" inputmode="tel" minlength="7" maxlength="20" autocomplete="off">
+                        </div>
+                    </div>
+                    <div id="rv-extra-stops" class="stack" style="gap:12px"></div>
+                    <button type="button" id="rv-add-stop" class="btn btn-secondary btn-sm" style="align-self:flex-start" onclick="app.addStop('rv')"><i class="ri-add-line"></i> Add another drop-off</button>
+                </fieldset>
+
+                <fieldset class="fieldset">
+                    <legend class="fieldset-title">Load</legend>
+                    <div class="field-row">
+                        <div class="field" style="flex:2">
+                            <label class="label" for="rv-item">Item</label>
+                            <select id="rv-item" class="input" required onchange="app.toggleReviewOtherItem()">
+                                <option value="Jumbo Bags">Jumbo Bags</option>
+                                <option value="Drums">Drums</option>
+                                <option value="Pallets">Pallets</option>
+                                <option value="Pails (25kg)">Pails (25kg)</option>
+                                <option value="Others">Others</option>
+                            </select>
+                        </div>
+                        <div class="field" style="flex:1">
+                            <label class="label" for="rv-qty">Quantity</label>
+                            <input type="number" id="rv-qty" class="input" min="1" step="1" inputmode="numeric" required>
+                        </div>
+                    </div>
+                    <div class="field" id="rv-item-other-wrap" style="display:none">
+                        <label class="label" for="rv-item-other">Others (please specify)</label>
+                        <input type="text" id="rv-item-other" class="input" maxlength="100" placeholder="e.g. IBC Tank, Steel Rolls">
+                    </div>
+                    <label class="check" for="rv-unloading">
+                        <input type="checkbox" id="rv-unloading">
+                        <span>Unloading service required</span>
+                    </label>
+                </fieldset>
+
+                <fieldset class="fieldset">
+                    <legend class="fieldset-title">Schedule and price</legend>
+                    <div class="field-row">
+                        <div class="field">
+                            <label class="label" for="rv-date">Delivery date</label>
+                            <input type="date" id="rv-date" class="input" required>
+                        </div>
+                        <div class="field">
+                            <label class="label" for="rv-price">Price to post (RM)</label>
+                            <input type="number" id="rv-price" class="input" min="1" step="any" inputmode="decimal" required>
+                            <span class="hint">Customer expected RM ${ui.money(expected)}.</span>
+                            <a href="https://funny-klepon-69696a.netlify.app/" target="_blank" rel="noopener noreferrer" class="hint" style="color:var(--info);font-weight:600;text-decoration:none">
+                                <i class="ri-links-line"></i> Price guide
+                            </a>
+                        </div>
+                    </div>
+                </fieldset>
+
+                <fieldset class="fieldset">
+                    <legend class="fieldset-title">Notes</legend>
+                    <div class="field">
+                        <label class="label" for="rv-remarks">Remarks (optional)</label>
+                        <input type="text" id="rv-remarks" class="input">
+                    </div>
+                </fieldset>
+
                 <button type="submit" class="btn btn-go btn-block">Approve &amp; post job</button>
             </form>
-
         `;
+
+        // Fill the form through the DOM (never pasted into HTML)
+        const set = (id, v) => { document.getElementById(id).value = v == null ? '' : v; };
+        set('rv-source', job.source_loc);
+        set('rv-source-link', job.source_maps_link);
+        set('rv-dest', job.dest_loc);
+        set('rv-dest-link', job.dest_maps_link);
+        const cs = ui.contactsOf(job);
+        set('rv-source-pic', cs.pickup.pic);
+        set('rv-source-phone', cs.pickup.phone);
+        set('rv-dest-pic', (cs.drops[0] || {}).pic);
+        set('rv-dest-phone', (cs.drops[0] || {}).phone);
+        this.fillStops('rv', ui.stops(job).map((s, i) => ({ ...s, ...(cs.drops[i + 1] || {}) })));
+
+        const sel = document.getElementById('rv-item');
+        const known = Array.from(sel.options).map(o => o.value).filter(v => v !== 'Others');
+        if (known.includes(job.item_desc)) {
+            sel.value = job.item_desc;
+        } else {
+            sel.value = 'Others';
+            set('rv-item-other', String(job.item_desc || '').replace(/^Others:\s*/, ''));
+        }
+        document.getElementById('rv-item-other-wrap').style.display = sel.value === 'Others' ? '' : 'none';
+        document.getElementById('rv-item-other').required = sel.value === 'Others';
+
+        set('rv-qty', job.quantity);
+        document.getElementById('rv-unloading').checked = !!job.unloading_service;
+        set('rv-date', job.delivery_date);
+        set('rv-price', expected || '');
+        set('rv-remarks', job.remarks);
 
         document.getElementById('approve-draft-form').addEventListener('submit', (ev) => this.approveDraft(ev, jobId, expected));
     },
 
-    async approveDraft(e, jobId, price) {
+    toggleReviewOtherItem() {
+        const isOther = document.getElementById('rv-item').value === 'Others';
+        const wrap = document.getElementById('rv-item-other-wrap');
+        const input = document.getElementById('rv-item-other');
+        wrap.style.display = isOther ? '' : 'none';
+        input.required = isOther;
+        if (isOther) input.focus(); else input.value = '';
+    },
+
+    async approveDraft(e, jobId, customerPrice) {
         e.preventDefault();
+        const v = (id) => document.getElementById(id).value.trim();
+
+        const price = parseFloat(v('rv-price'));
         if (!Number.isFinite(price) || price <= 0) {
-            ui.notify("This draft has no valid price. Please contact the customer.");
+            ui.notify("Please enter a valid price.");
             return;
         }
-        if (!confirm("Post this job to transporters at RM " + ui.money(price) + "?")) return;
+        let itemDesc = document.getElementById('rv-item').value;
+        if (itemDesc === 'Others') {
+            const other = v('rv-item-other');
+            if (!other) { ui.notify("Please specify the item under Others."); return; }
+            itemDesc = 'Others: ' + other;
+        }
+        const contactProblem = this.contactsError('rv');
+        if (contactProblem) { ui.notify(contactProblem); return; }
+
+        const changes = {
+            source_loc: v('rv-source'),
+            source_maps_link: v('rv-source-link') || null,
+            dest_loc: v('rv-dest'),
+            dest_maps_link: v('rv-dest-link') || null,
+            item_desc: itemDesc,
+            quantity: parseInt(v('rv-qty')),
+            delivery_date: v('rv-date'),
+            unloading_service: document.getElementById('rv-unloading').checked,
+            remarks: v('rv-remarks') || null,
+            extra_stops: this.collectStops('rv'),
+            contacts: this.collectContacts('rv')
+        };
+
+        const note = (price !== Number(customerPrice))
+            ? "\n(The customer expected RM " + ui.money(customerPrice) + ".)" : "";
+        if (!confirm("Post this job to transporters at RM " + ui.money(price) + "?" + note)) return;
 
         const { data: updated, error } = await supabaseClient
             .from('jobs')
             .update({
+                ...changes,
                 offered_price: price,
                 status: 'open',
                 approved_at: new Date().toISOString()
@@ -2525,6 +2688,7 @@ const app = {
             return;
         }
 
+        this.resetStops('rv');
         ui.notify("Job published.");
         this.showRtJobs();
     },
