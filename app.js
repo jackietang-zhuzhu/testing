@@ -1781,20 +1781,11 @@ const app = {
         if (mode === 'copy') ui.notify("Copied from your previous order. Please set the date and price.");
         this.showView('customerNewJob');
 
-        // Saved primary address: show the shortcut button, and for a brand-new job fill in the pickup.
-        // The customer can still overwrite it, and drop-off is always left empty.
-        // The address is normally already loaded (see routeUser), so it is filled in straight away with no waiting.
+        // Saved primary address: only show the shortcut button and the saved address.
+        // The pickup is NOT filled in automatically; it is only filled when the customer taps "Use my primary address".
         this.updateFactoryButton();
-        const filledWith = (mode === 'new' && this.factory) ? this.factory.loc : null;
-        if (filledWith !== null) this.useFactory();
-        // Then check again quietly: covers "not loaded yet", and an address that was changed on another device.
-        this.loadFactory().then(factory => {
-            this.updateFactoryButton();
-            if (!factory || mode !== 'new' || this.currentView !== 'customerNewJob') return;
-            const src = document.getElementById('cj-source');
-            const untouched = filledWith !== null && src.value === filledWith; // still exactly what we filled in
-            if (!src.value.trim() || (untouched && factory.loc !== filledWith)) this.useFactory(); // never overwrite something typed
-        });
+        // Check again quietly, in case the address was not loaded yet or was changed on another device.
+        this.loadFactory().then(() => this.updateFactoryButton());
     },
 
     fillCustomerForm(job, withSchedule) {
@@ -2288,9 +2279,9 @@ const app = {
                 ? `<div class="job-foot">${price}${actions.length ? `<div class="actions" style="flex-wrap:wrap;justify-content:flex-end">${actions.join('')}</div>` : ''}</div>`
                 : '';
 
-            // Collapsed / expanded. First time we see an order: finished (delivered) orders start collapsed,
-            // everything else starts expanded. After that we keep whatever the customer chose.
-            if (!(job.id in this.cardOpen)) this.cardOpen[job.id] = stage !== 'delivered';
+            // Collapsed / expanded. Every order starts collapsed ("Show more" to open).
+            // After that we keep whatever the customer chose.
+            if (!(job.id in this.cardOpen)) this.cardOpen[job.id] = false;
             const open = this.cardOpen[job.id];
 
             // One-line summary shown only while the card is collapsed
