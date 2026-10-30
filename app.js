@@ -459,7 +459,7 @@ const app = {
     knownStages: null,
     currentBidsJobId: null,
     uploading: 0,
-    factory: null,           // customer's saved pickup {loc, link}, or null
+    primaryAddress: null,    // customer's saved pickup {loc, link}, or null
     editingHadStops: false,
     editingWasRejected: false, // the order being edited was rejected, so saving it resubmits it
     submittingOrder: false,
@@ -570,7 +570,7 @@ const app = {
         this.currentUser = null;
         this.currentUserRole = null;
         this.transporterProfile = null; // <-- Added
-        this.factory = null;
+        this.primaryAddress = null;
         this.myBidsByJob = {};
         this.lastSig = {};
         this.knownRequestIds = null;
@@ -665,7 +665,7 @@ const app = {
 
         if (customer) {
             this.currentUserRole = 'customer';
-            this.loadFactory().catch(() => {}); // fetch the saved primary address now, so New order can fill it in at once
+            this.loadPrimaryAddress().catch(() => {}); // fetch the saved primary address now, so New order can fill it in at once
             navs.container.classList.add('hidden'); // no bottom tabs for customers yet
             navs.rt.classList.replace('flex', 'hidden');
             navs.transporter.classList.replace('flex', 'hidden');
@@ -858,7 +858,7 @@ const app = {
     // ==========================================
     // --- CUSTOMER: saved primary address (used as the pickup) ---
     // ==========================================
-    async loadFactory() {
+    async loadPrimaryAddress() {
         if (this.currentUserRole !== 'customer' || !this.currentUser) return null;
         const { data, error } = await supabaseClient
             .from('customers')
@@ -868,42 +868,42 @@ const app = {
         if (error) {
             // e.g. the database columns have not been added yet: just behave as "no saved address"
             console.warn('Primary address not available:', error.message);
-            this.factory = null;
+            this.primaryAddress = null;
             return null;
         }
-        this.factory = (data && data.default_pickup_loc)
+        this.primaryAddress = (data && data.default_pickup_loc)
             ? { loc: data.default_pickup_loc, link: data.default_pickup_link || '' }
             : null;
-        return this.factory;
+        return this.primaryAddress;
     },
 
-    updateFactoryButton() {
-        const btn = document.getElementById('cj-use-factory');
-        if (btn) btn.style.display = this.factory ? '' : 'none';
+    updatePrimaryButton() {
+        const btn = document.getElementById('cj-use-primary');
+        if (btn) btn.style.display = this.primaryAddress ? '' : 'none';
         // Show the saved primary address itself (textContent: never parsed as HTML)
         const box = document.getElementById('cj-primary-display');
         const text = document.getElementById('cj-primary-text');
         if (box && text) {
-            text.textContent = this.factory ? ui.place(this.factory.loc) : '';
-            box.style.display = this.factory ? '' : 'none';
+            text.textContent = this.primaryAddress ? ui.place(this.primaryAddress.loc) : '';
+            box.style.display = this.primaryAddress ? '' : 'none';
         }
     },
 
-    useFactory() {
-        if (!this.factory) return;
-        document.getElementById('cj-source').value = this.factory.loc;
-        document.getElementById('cj-source-link').value = this.factory.link || '';
+    usePrimaryAddress() {
+        if (!this.primaryAddress) return;
+        document.getElementById('cj-source').value = this.primaryAddress.loc;
+        document.getElementById('cj-source-link').value = this.primaryAddress.link || '';
     },
 
-    async saveFactory(loc, link) {
-        if (this.factory && this.factory.loc === loc && (this.factory.link || '') === (link || '')) return; // unchanged
-        const { error } = await supabaseClient.rpc('save_my_factory', { p_loc: loc, p_link: link || '' });
+    async savePrimaryAddress(loc, link) {
+        if (this.primaryAddress && this.primaryAddress.loc === loc && (this.primaryAddress.link || '') === (link || '')) return; // unchanged
+        const { error } = await supabaseClient.rpc('save_my_primary_address', { p_loc: loc, p_link: link || '' });
         if (error) {
             console.error(error);
             ui.notify("Your order was placed, but your primary address could not be saved: " + error.message);
             return;
         }
-        this.factory = { loc, link: link || '' };
+        this.primaryAddress = { loc, link: link || '' };
     },
 
 	escapeHTML(value) {
@@ -1830,9 +1830,9 @@ const app = {
 
         // Saved primary address: only show the shortcut button and the saved address.
         // The pickup is NOT filled in automatically; it is only filled when the customer taps "Use my primary address".
-        this.updateFactoryButton();
+        this.updatePrimaryButton();
         // Check again quietly, in case the address was not loaded yet or was changed on another device.
-        this.loadFactory().then(() => this.updateFactoryButton());
+        this.loadPrimaryAddress().then(() => this.updatePrimaryButton());
     },
 
     fillCustomerForm(job, withSchedule) {
@@ -1936,7 +1936,7 @@ const app = {
         row('Expected price', `RM ${ui.money(parseFloat(v('cj-price')))}`, 'is-price');
         if (remarks) row('Remarks', ui.esc(remarks));
         if (photoCount) row('Photos', `${photoCount} attached`);
-        if (document.getElementById('cj-save-factory').checked) row('Primary address', 'Pickup will be saved');
+        if (document.getElementById('cj-save-primary').checked) row('Primary address', 'Pickup will be saved');
 
         const editing = !!this.editingJobId;
         document.getElementById('confirm-body').innerHTML = rows.join('');
@@ -2025,8 +2025,8 @@ const app = {
         document.getElementById('confirm-modal').classList.add('hidden');
         this.confirmReturnFocus = null;
 
-        if (document.getElementById('cj-save-factory').checked) {
-            await this.saveFactory(payload.p_source_loc, payload.p_source_maps_link);
+        if (document.getElementById('cj-save-primary').checked) {
+            await this.savePrimaryAddress(payload.p_source_loc, payload.p_source_maps_link);
         }
         if (failed.length) {
             ui.notify(`Your order was placed, but ${failed.join(' and ')} could not be saved. Please tap Edit on the order and add ${failed.length > 1 ? 'them' : 'it'} again.`);
