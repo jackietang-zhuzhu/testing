@@ -295,6 +295,10 @@ const ui = {
     // 'po' = the customer's PO is not in yet, 'inv' = the PO is in but our invoice is not. Jobs the admin posted himself have no customer, so nothing is flagged.
     // Statuses of a job that has been awarded to a transporter (set by the database; see the status flow comment in the SQL)
     // assigned -> delivered (all DOs in) -> pending_inv (customer PO in, our INV not yet) -> completed -> archived (History)
+    // Shown on a completed order / job: tells the user where it goes next, so it does not seem to vanish
+    completedNotice(noun) {
+        return `<div class="notice notice-info"><i class="ri-checkbox-circle-line"></i><span>This ${noun} is completed. When RT archives it, you will find it under History.</span></div>`;
+    },
     awarded(job) {
         return !!job && ['assigned', 'delivered', 'pending_inv', 'completed'].includes(job.status);
     },
@@ -457,6 +461,7 @@ const app = {
     knownRequestIds: null,
     knownJobIds: null,
     knownStages: null,
+    knownMyJobIds: null,
     currentBidsJobId: null,
     uploading: 0,
     primaryAddress: null,    // customer's saved pickup {loc, link}, or null
@@ -576,6 +581,7 @@ const app = {
         this.knownRequestIds = null;
         this.knownJobIds = null;
         this.knownStages = null;
+        this.knownMyJobIds = null;
         this.currentBidsJobId = null;
         this.rtMonth = '';
         this.histMonth = { admin: '', customer: '', transporter: '' };
@@ -2089,7 +2095,7 @@ const app = {
         input.value = '';
         if (url && !saved) { ui.notify('Could not save the PO to the order. Please try again.'); return; }
         if (!saved) return;
-        ui.notify('PO uploaded.');
+        ui.notify('PO uploaded. Once all documents are in, the order moves to History.');
         this.fetchCustomerJobs();
     },
 
@@ -2110,7 +2116,7 @@ const app = {
         this.uploading = 0;
         input.value = '';
         if (!saved) return;
-        ui.notify('Invoice uploaded.');
+        ui.notify('Invoice uploaded. If every document is in, the job moves to History.');
         this.refreshAdminJobViews();
     },
 
@@ -2238,6 +2244,7 @@ const app = {
         const visible = (jobs || []).filter(j => j.status !== 'archived');
         const removed = (jobs || []).filter(j => j.status === 'archived'); // shown on the History page
         const prevStages = this.knownStages;
+        const movedToHistory = !!prevStages && removed.some(j => prevStages[j.id] !== undefined);
         this.knownStages = {};
         visible.forEach(j => { this.knownStages[j.id] = this.customerStage(j); });
         const sig = JSON.stringify([visible, removed]);
@@ -2246,6 +2253,7 @@ const app = {
         if (silent && prevStages && visible.some(j => prevStages[j.id] !== undefined && prevStages[j.id] !== this.knownStages[j.id])) {
             ui.notify('An order status was updated');
         }
+        if (silent && movedToHistory) ui.notify('An order was moved to History');
         this.customerJobs = visible;
         this.customerHistory = removed;
         this.renderCustomerJobs();
@@ -2370,6 +2378,7 @@ const app = {
                     </div>
                     <div class="job-body" id="jb-${id}">
                         ${stage === 'rejected' ? this.rejectNotice(job) : this.customerSteps(stage, job)}
+                        ${job.status === 'completed' ? ui.completedNotice('order') : ''}
                         ${ui.route(job)}
                         ${ui.facts(job, { date: job.delivery_date })}
                         ${ui.photos(job, true)}
@@ -2869,7 +2878,7 @@ const app = {
         }
 
         this.uploading = 0;
-        ui.notify(stop === null ? "DO uploaded." : `DO uploaded for drop-off ${stop + 1}.`);
+        ui.notify(stop === null ? (isAdmin ? "DO uploaded." : "DO uploaded. Once all documents are in, the job moves to History.") : `DO uploaded for drop-off ${stop + 1}.`);
         input.value = '';
         if (isAdmin) this.refreshAdminJobViews(); else this.fetchMyJobs();
     },
@@ -2898,7 +2907,11 @@ const app = {
         this.lastSig.myjobs = sig;
         // A job the admin archived leaves My jobs and moves to History
         const withJob = (bids || []).filter(b => b.jobs);
-        this.renderMyJobs(withJob.filter(b => b.jobs.status !== 'archived'));
+        const activeNow = withJob.filter(b => b.jobs.status !== 'archived');
+        const prevActive = this.knownMyJobIds;
+        this.knownMyJobIds = new Set(activeNow.map(b => b.jobs.id));
+        if (silent && prevActive && withJob.some(b => b.jobs.status === 'archived' && prevActive.has(b.jobs.id))) ui.notify('A job was moved to History');
+        this.renderMyJobs(activeNow);
         this.renderTransporterHistory(withJob.filter(b => b.jobs.status === 'archived'));
     },
 
@@ -3001,6 +3014,7 @@ const app = {
                         ${ui.doStopUploads(job)}
                     </div>
                     ${doNotice}
+                    ${job.status === 'completed' ? ui.completedNotice('job') : ''}
                     ${this.adminToggle(id, open)}
                     <div class="job-foot">
                         ${ui.price('Your price', bid.proposed_price)}
@@ -3021,7 +3035,7 @@ const app = {
     // --- ADMIN: documents (PO / DO / INV), completing jobs ---
     // The admin can upload or replace every document on any assigned job.
     // Status flow (kept up to date by the database, whoever uploads a document and whether or not anyone has the app open):
-    //   assigned -> delivered (every DO in) -> pending_inv (customer PO in, our INV not yet) -> completed (accepted price, PO, DO and INV all in)
+    //   assigned -> delivered (every DO in) -> pending_inv (customer PO in, our INV not yet) -> archived (accepted price, PO, DO and INV all in: History)
     // The admin can also complete a job by hand (for example a verbal booking that never gets a PO).
     // A completed job stays in the active list until the admin moves it to History ('archived').
     // ==========================================
@@ -3059,7 +3073,7 @@ const app = {
         this.uploading = 0;
         input.value = '';
         if (!saved) return;
-        ui.notify('PO uploaded.');
+        ui.notify('PO uploaded. If every document is in, the job moves to History.');
         this.refreshAdminJobViews();
     },
 
