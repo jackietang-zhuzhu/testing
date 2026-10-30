@@ -293,8 +293,13 @@ const ui = {
     },
     // What the admin still has to chase on a customer's delivered job:
     // 'po' = the customer's PO is not in yet, 'inv' = the PO is in but our invoice is not. Jobs the admin posted himself have no customer, so nothing is flagged.
+    // Statuses of a job that has been awarded to a transporter (set by the database; see the status flow comment in the SQL)
+    // assigned -> delivered (all DOs in) -> pending_inv (customer PO in, our INV not yet) -> completed -> archived (History)
+    awarded(job) {
+        return !!job && ['assigned', 'delivered', 'pending_inv', 'completed'].includes(job.status);
+    },
     todoOf(job) {
-        if (!job || job.status !== 'assigned' || !job.do_url || !job.customers) return '';
+        if (!job || !['delivered', 'pending_inv'].includes(job.status) || !job.do_url || !job.customers) return '';
         if (!job.customer_po) return 'po';
         if (!job.invoice_file) return 'inv';
         return '';
@@ -2252,6 +2257,7 @@ const app = {
     customerStage(job) {
         if (job.status === 'rejected') return 'rejected';
         if (job.status === 'pending_review') return 'review';
+        if (['delivered', 'pending_inv', 'completed'].includes(job.status)) return 'delivered';
         if (job.status === 'assigned') return job.do_url ? 'delivered' : 'delivering';
         return 'approved';
     },
@@ -3014,15 +3020,26 @@ const app = {
     // ==========================================
     // --- ADMIN: documents (PO / DO / INV), completing jobs ---
     // The admin can upload or replace every document on any assigned job.
-    // A job that has the accepted price, PO, DO and INV is completed (moved to History) by the database itself,
-    // whoever uploaded the last document and whether or not anyone has the app open.
+    // Status flow (kept up to date by the database, whoever uploads a document and whether or not anyone has the app open):
+    //   assigned -> delivered (every DO in) -> pending_inv (customer PO in, our INV not yet) -> completed (accepted price, PO, DO and INV all in)
     // The admin can also complete a job by hand (for example a verbal booking that never gets a PO).
-    // History is the 'archived' status, so customers and transporters see it there as before.
+    // A completed job stays in the active list until the admin moves it to History ('archived').
     // ==========================================
     adminDocs(job) {
         return ui.poSlip(job, { download: true, upload: true, handler: 'adminUploadPO', emptyText: 'No PO yet. The customer can upload it, or you can upload it here.' })
             + ui.doSlipAdmin(job)
             + ui.invSlip(job, { download: true, upload: true });
+    },
+
+    // Admin: the status pill on a job card
+    statusPill(job) {
+        switch (job.status) {
+            case 'assigned': return ui.pill('Assigned', 'go', 'ri-check-line');
+            case 'delivered': return ui.pill('Delivered', 'go', 'ri-check-double-line');
+            case 'pending_inv': return ui.pill('Pending invoice', 'info', 'ri-file-upload-line');
+            case 'completed': return ui.pill('Completed', 'go', 'ri-checkbox-circle-line');
+            default: return ui.pill('Open for bids', 'info');
+        }
     },
 
     // Admin: Upload / Replace PO on behalf of the customer
@@ -3061,18 +3078,33 @@ const app = {
             return;
         }
         const msg = (job && !job.customer_po)
-            ? 'There is no PO for this job.\nMark it as completed anyway and move it to History?'
-            : 'Mark this job as completed and move it to History?';
+            ? 'There is no PO for this job.\nMark it as completed anyway?'
+            : 'Mark this job as completed?';
         if (!confirm(msg)) return;
+        const { data, error } = await supabaseClient
+            .from('jobs')
+            .update({ status: 'completed' })
+            .eq('id', jobId)
+            .in('status', ['assigned', 'delivered', 'pending_inv'])
+            .select('id');
+        if (error) { ui.notify('Error completing job: ' + error.message); return; }
+        if (!data || !data.length) { ui.notify('Could not complete the job: it may already have been handled.'); return; }
+        ui.toast('Job completed.', 'success');
+        this.fetchJobsForRT();
+    },
+
+    // Admin: move a completed job to History
+    async archiveJob(jobId) {
+        if (!confirm('Move this completed job to History?')) return;
         const { data, error } = await supabaseClient
             .from('jobs')
             .update({ status: 'archived' })
             .eq('id', jobId)
-            .eq('status', 'assigned')
+            .eq('status', 'completed')
             .select('id');
-        if (error) { ui.notify('Error completing job: ' + error.message); return; }
-        if (!data || !data.length) { ui.notify('Could not complete the job: it may already have been handled.'); return; }
-        ui.toast('Job completed and moved to History.', 'success');
+        if (error) { ui.notify('Error moving job to History: ' + error.message); return; }
+        if (!data || !data.length) { ui.notify('Could not move the job: it may already have been handled.'); return; }
+        ui.toast('Job moved to History.', 'success');
         this.fetchJobsForRT();
     },
 
@@ -3216,7 +3248,7 @@ const app = {
         }
 
         const cardOf = (job) => {
-            const isAssigned = job.status === 'assigned';
+            const isAssigned = ui.awarded(job);
             const id = ui.esc(job.id);
             const todo = ui.todoOf(job);
             const todoPill = todo === 'po' ? ui.pill('PO missing', 'warn', 'ri-file-warning-line')
@@ -3228,7 +3260,7 @@ const app = {
             return `
                 <article class="job-card${open ? '' : ' is-collapsed'}" data-job="${id}">
                     <div class="job-head">
-                        <span style="display:inline-flex;gap:6px;flex-wrap:wrap">${isAssigned ? ui.pill('Assigned', 'go', 'ri-check-line') : ui.pill('Open for bids', 'info')}${todoPill}</span>
+                        <span style="display:inline-flex;gap:6px;flex-wrap:wrap">${this.statusPill(job)}${todoPill}</span>
                         <span class="job-time">${ui.posted(job.created_at)}</span>
                     </div>
                     ${this.adminSummary(job)}
@@ -3245,8 +3277,8 @@ const app = {
                         <div class="actions">
                             ${isAssigned
                                 ? `<button class="btn btn-secondary btn-sm" data-id="${id}" onclick="app.viewBids(this.dataset.id)">Assigned details</button>
-                                   ${(delivered && job.invoice_file) ? `<button class="btn btn-go btn-sm" data-id="${id}" onclick="app.completeJob(this.dataset.id)"><i class="ri-check-double-line"></i> Complete</button>` : ''}
-                                   <button class="btn btn-warn btn-sm" data-id="${id}" onclick="app.unassignJob(this.dataset.id)">Undo</button>`
+                                   ${(delivered && job.invoice_file && job.status !== 'completed') ? `<button class="btn btn-go btn-sm" data-id="${id}" onclick="app.completeJob(this.dataset.id)"><i class="ri-check-double-line"></i> Complete</button>` : ''}
+                                   ${job.status === 'completed' ? `<button class="btn btn-go btn-sm" data-id="${id}" onclick="app.archiveJob(this.dataset.id)"><i class="ri-archive-line"></i> Move to History</button>` : `<button class="btn btn-warn btn-sm" data-id="${id}" onclick="app.unassignJob(this.dataset.id)">Undo</button>`}`
                                 : `<button class="btn btn-primary btn-sm" data-id="${id}" onclick="app.viewBids(this.dataset.id)">View bids</button>`
                             }
                             <button class="btn btn-danger-ghost btn-sm btn-icon" data-id="${id}" onclick="app.deleteJob(this.dataset.id)" aria-label="Archive job" title="Archive job"><i class="ri-delete-bin-line"></i></button>
@@ -3355,7 +3387,7 @@ const app = {
         const { data: jobs, error } = await supabaseClient
             .from('jobs')
             .select('*')
-            .eq('status', 'assigned')
+            .in('status', ['assigned', 'delivered', 'pending_inv', 'completed'])
             .order('created_at', { ascending: false })
             .limit(5);
             
