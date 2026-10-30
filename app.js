@@ -2486,8 +2486,8 @@ const app = {
                         ${ui.facts(job, { date: job.delivery_date })}
                         ${ui.photos(job, true)}
                         ${ui.remarks(job.remarks)}
-                        ${ui.doSlip(job, { showTime: true, timeLabel: 'Delivered', download: true })}
                         ${ui.poSlip(job, { title: 'Your PO', upload: true, cls: 'is-prominent' })}
+                        ${ui.doSlip(job, { showTime: true, timeLabel: 'Delivered', download: true })}
                         ${ui.invSlip(job, { download: true })}
                         ${delivered ? ui.ratingBox(job) : ''}
                     </div>
