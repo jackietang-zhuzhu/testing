@@ -2294,7 +2294,8 @@ const app = {
             return;
         }
 
-        const filters = [['all', 'All'], ['review', 'Awaiting approval'], ['rejected', 'Rejected'], ['approved', 'Approved'], ['delivering', 'Delivering'], ['delivered', 'Delivered']];
+        // Same wording as the progress steps (Order received / Looking for driver / Driver assigned / Delivered)
+        const filters = [['all', 'All'], ['review', 'Order received'], ['rejected', 'Rejected'], ['approved', 'Looking for driver'], ['delivering', 'Driver assigned'], ['delivered', 'Delivered']];
         const counts = { all: all.length };
         filters.slice(1).forEach(([key]) => { counts[key] = all.filter(j => this.customerStage(j) === key).length; });
         const active = (this.customerFilter && counts[this.customerFilter] !== undefined) ? this.customerFilter : 'all';
@@ -2314,10 +2315,10 @@ const app = {
             const stage = this.customerStage(job);
             const id = ui.esc(job.id);
             const pill = {
-                review: ui.pill('Awaiting approval', 'warn', 'ri-time-line'),
+                review: ui.pill('Order received', 'warn', 'ri-time-line'),
                 rejected: ui.pill('Rejected', 'stop', 'ri-close-circle-line'),
-                approved: ui.pill('Approved', 'info', 'ri-megaphone-line'),
-                delivering: ui.pill('Delivering', 'info', 'ri-truck-line'),
+                approved: ui.pill('Looking for driver', 'info', 'ri-megaphone-line'),
+                delivering: ui.pill('Driver assigned', 'info', 'ri-truck-line'),
                 delivered: ui.pill('Delivered', 'go', 'ri-check-double-line')
             }[stage];
 
