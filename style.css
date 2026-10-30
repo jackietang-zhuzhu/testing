@@ -739,7 +739,8 @@ input[type="file"]::file-selector-button {
     background: var(--road-soft);
     border: 1px solid #ecd48c;
     border-left: 4px solid var(--road);
-    padding: 12px 14px;
+    /* border + padding add up to the same 12px as the other grey blocks, so the text lines up */
+    padding: 12px 11px 12px 8px;
 }
 .do-block.is-prominent > b,
 .do-block.is-prominent > div > b { font-size: .95rem; }
