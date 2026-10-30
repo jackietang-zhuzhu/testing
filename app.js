@@ -72,9 +72,10 @@ const ui = {
     notify(message) {
         const m = String(message);
         let tone = 'info';
-        if (/already/i.test(m)) tone = 'info';
+        if (/^uploading/i.test(m) || /already/i.test(m)) tone = 'info'; // still in progress, not a success yet
         else if (/error|failed|invalid|cannot|could not|too large|suspended|blocked/i.test(m)) tone = 'error';
-        else if (/success|sent|posted|placed|published|awarded|accepted|submitted|removed|undone|uploaded|uploading|cancelled|updated|restored|rejected|deleted|resubmitted/i.test(m)) tone = 'success';
+        else if (/success|sent|posted|placed|published|awarded|accepted|submitted|removed|undone|uploaded|cancelled|updated|restored|rejected|deleted|resubmitted/i.test(m)) tone = 'success';
+        else if (/^please /i.test(m)) tone = 'error'; // "Please enter / specify / upload ..." = the form needs fixing
         this.toast(m, tone);
     },
 
@@ -1756,7 +1757,7 @@ const app = {
         }
         
         if (!updatedJob || updatedJob.length === 0) {
-            ui.notify("❌ Undo Failed: The database blocked the update.");
+            ui.notify("Undo failed: the database blocked the update.");
             return;
         }
         
@@ -2366,7 +2367,7 @@ const app = {
                         ${ui.facts(job, { date: job.delivery_date })}
                         ${ui.photos(job, true)}
                         ${ui.remarks(job.remarks)}
-                        ${ui.poSlip(job, { title: 'Your PO', upload: stage === 'delivered', cls: 'is-prominent' })}
+                        ${ui.poSlip(job, { title: 'Your PO', upload: stage === 'delivering' || stage === 'delivered', cls: 'is-prominent' })}
                         ${ui.doSlip(job, { showTime: true, timeLabel: 'Delivered', download: true })}
                         ${ui.invSlip(job, { download: true })}
                         ${stage === 'delivered' ? ui.ratingBox(job) : ''}
@@ -2470,12 +2471,17 @@ const app = {
             const delivered = !!job.do_url;
             // Everything on the History page counts as completed
             const pill = ui.pill('Completed', 'go', 'ri-check-double-line');
-            const again = `<button class="btn btn-secondary btn-sm" data-id="${id}" onclick="app.openCustomerCopy(this.dataset.id)"><i class="ri-repeat-line"></i> Book again</button>`;
+            // Same rule as the Orders list: only a delivered order can be booked again
+            const again = delivered
+                ? `<button class="btn btn-secondary btn-sm" data-id="${id}" onclick="app.openCustomerCopy(this.dataset.id)"><i class="ri-repeat-line"></i> Book again</button>`
+                : '';
             const price = job.customer_expected_price != null ? ui.price('Your expected price', job.customer_expected_price) : '<span></span>';
             if (!(job.id in this.cardOpen)) this.cardOpen[job.id] = false;
             const open = this.cardOpen[job.id];
+            // PO can be uploaded once the job has been assigned (a DO is not needed)
+            const canPo = !!(job.assigned_at || job.do_url);
             return `
-                <article class="job-card is-dim${open ? '' : ' is-collapsed'}" data-job="${id}">
+                <article class="job-card${open ? '' : ' is-collapsed'}" data-job="${id}">
                     <div class="job-head">
                         ${pill}
                         <span class="job-time">${ui.posted(job.created_at, 'Ordered')}</span>
@@ -2486,7 +2492,7 @@ const app = {
                         ${ui.facts(job, { date: job.delivery_date })}
                         ${ui.photos(job, true)}
                         ${ui.remarks(job.remarks)}
-                        ${ui.poSlip(job, { title: 'Your PO', upload: true, cls: 'is-prominent' })}
+                        ${ui.poSlip(job, { title: 'Your PO', upload: canPo, cls: 'is-prominent' })}
                         ${ui.doSlip(job, { showTime: true, timeLabel: 'Delivered', download: true })}
                         ${ui.invSlip(job, { download: true })}
                         ${delivered ? ui.ratingBox(job) : ''}
@@ -3044,17 +3050,17 @@ const app = {
         return !!(job && job.accepted_price != null && job.do_url && job.customer_po && job.invoice_file);
     },
 
-    // Admin: mark one delivered job as completed by hand (even if a document is still missing)
+    // Admin: mark one job as completed by hand. The DO and the INV are required; the PO is optional
+    // (a verbal booking may never get one), so a missing PO only shows a reminder.
     async completeJob(jobId) {
         const job = (this.rtJobsList || []).find(j => String(j.id) === String(jobId));
-        const missing = [];
-        if (job) {
-            if (!job.do_url) missing.push('DO');
-            if (!job.customer_po) missing.push('PO');
-            if (!job.invoice_file) missing.push('INV');
+        if (job && (!job.do_url || !job.invoice_file)) {
+            const need = [!job.do_url ? 'DO' : '', !job.invoice_file ? 'INV' : ''].filter(Boolean).join(' and ');
+            ui.notify(`Cannot complete yet: the ${need} must be uploaded first.`);
+            return;
         }
-        const msg = missing.length
-            ? `This job is still missing: ${missing.join(', ')}.\nMark it as completed anyway and move it to History?`
+        const msg = (job && !job.customer_po)
+            ? 'There is no PO for this job.\nMark it as completed anyway and move it to History?'
             : 'Mark this job as completed and move it to History?';
         if (!confirm(msg)) return;
         const { data, error } = await supabaseClient
@@ -3238,7 +3244,7 @@ const app = {
                         <div class="actions">
                             ${isAssigned
                                 ? `<button class="btn btn-secondary btn-sm" data-id="${id}" onclick="app.viewBids(this.dataset.id)">Assigned details</button>
-                                   ${delivered ? `<button class="btn btn-go btn-sm" data-id="${id}" onclick="app.completeJob(this.dataset.id)"><i class="ri-check-double-line"></i> Complete</button>` : ''}
+                                   ${(delivered && job.invoice_file) ? `<button class="btn btn-go btn-sm" data-id="${id}" onclick="app.completeJob(this.dataset.id)"><i class="ri-check-double-line"></i> Complete</button>` : ''}
                                    <button class="btn btn-warn btn-sm" data-id="${id}" onclick="app.unassignJob(this.dataset.id)">Undo</button>`
                                 : `<button class="btn btn-primary btn-sm" data-id="${id}" onclick="app.viewBids(this.dataset.id)">View bids</button>`
                             }
