@@ -3092,18 +3092,18 @@ const app = {
             return;
         }
         const msg = (job && !job.customer_po)
-            ? 'There is no PO for this job.\nMark it as completed anyway?'
-            : 'Mark this job as completed?';
+            ? 'There is no PO for this job.\nMark it as completed and move it to History anyway?'
+            : 'Mark this job as completed and move it to History?';
         if (!confirm(msg)) return;
         const { data, error } = await supabaseClient
             .from('jobs')
-            .update({ status: 'completed' })
+            .update({ status: 'archived' })
             .eq('id', jobId)
-            .in('status', ['assigned', 'delivered', 'pending_inv'])
+            .in('status', ['assigned', 'delivered', 'pending_inv', 'completed'])
             .select('id');
         if (error) { ui.notify('Error completing job: ' + error.message); return; }
         if (!data || !data.length) { ui.notify('Could not complete the job: it may already have been handled.'); return; }
-        ui.toast('Job completed.', 'success');
+        ui.toast('Job completed and moved to History.', 'success');
         this.fetchJobsForRT();
     },
 
