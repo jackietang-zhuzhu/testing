@@ -3552,11 +3552,11 @@ const app = {
         d.bids.forEach(b => { const k = monthOfBid(b); if (k) monthSet.add(k); });
         d.cancels.forEach(c => { const k = this.monthKey(c.delivery_date); if (k) monthSet.add(k); });
         const months = [...monthSet].sort().reverse();
-        if (!this.tpMonth) this.tpMonth = thisMonth;
+        if (!this.tpMonth) this.tpMonth = 'all'; // default: All time
         const month = (this.tpMonth === 'all' || monthSet.has(this.tpMonth)) ? this.tpMonth : thisMonth;
         const sel = document.getElementById('tp-month');
         if (sel) {
-            sel.innerHTML = months.map(k => `<option value="${ui.esc(k)}">${ui.esc(this.monthLabel(k))}</option>`).join('') + '<option value="all">All time</option>';
+            sel.innerHTML = '<option value="all">All time</option>' + months.map(k => `<option value="${ui.esc(k)}">${ui.esc(this.monthLabel(k))}</option>`).join('');
             sel.value = month;
         }
         const inMonth = (k) => month === 'all' || k === month;
