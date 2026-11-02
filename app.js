@@ -85,12 +85,12 @@ const ui = {
         const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(raw));
         if (!m) return this.esc(raw);
         const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
-        return this.esc(d.toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' }));
+        return this.esc(d.toLocaleDateString(I18N.locale(), { day: 'numeric', month: 'short', year: 'numeric' }));
     },
     fmtShort(iso) {
         const d = new Date(iso);
         if (!iso || isNaN(d)) return '';
-        return this.esc(d.toLocaleString('en-MY', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true }));
+        return this.esc(d.toLocaleString(I18N.locale(), { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true }));
     },
     downloadUrl(url, name = 'Delivery-Order') {
         const clean = String(url || '').split(/[?#]/)[0];
@@ -100,7 +100,7 @@ const ui = {
     fmtDateTime(iso) {
         const d = new Date(iso);
         if (!iso || isNaN(d)) return 'Unknown time';
-        return this.esc(d.toLocaleString('en-MY', {
+        return this.esc(d.toLocaleString(I18N.locale(), {
             day: '2-digit', month: 'short', year: 'numeric',
             hour: '2-digit', minute: '2-digit', hour12: true
         }));
@@ -109,7 +109,7 @@ const ui = {
     money(n) {
         const v = Number(n);
         if (!Number.isFinite(v)) return '0.00';
-        return v.toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        return v.toLocaleString(I18N.locale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     },
 
     // ----- building blocks -----
@@ -3149,7 +3149,7 @@ const app = {
         const m = /^(\d{4})-(\d{2})$/.exec(String(key || ''));
         if (!m) return 'No date';
         return new Date(Number(m[1]), Number(m[2]) - 1, 1)
-            .toLocaleDateString('en-MY', { month: short ? 'short' : 'long', year: 'numeric' });
+            .toLocaleDateString(I18N.locale(), { month: short ? 'short' : 'long', year: 'numeric' });
     },
 
     // ---------- History: one delivery month at a time (admin, customer and transporter) ----------
