@@ -388,6 +388,7 @@
         "Please enter a valid contact number, for example 012-345 6789.": "Sila masukkan nombor telefon yang sah, contohnya 012-345 6789.",
         "Are you sure you want to restore this job back to the active list?": "Adakah anda pasti mahu memulihkan kerja ini ke senarai aktif?",
         "Job successfully restored.": "Kerja berjaya dipulihkan.",
+        "Job restored. It stays in Active jobs until you press Mark as complete.": "Kerja dipulihkan. Ia kekal dalam Kerja aktif sehingga anda menekan Tandakan selesai.",
         "Please upload the DO as an image (PNG or JPG) or a PDF.": "Sila muat naik DO sebagai imej (PNG atau JPG) atau PDF.",
         "File is too large. Maximum size is 10 MB.": "Fail terlalu besar. Saiz maksimum ialah 10 MB.",
         "DO uploaded.": "DO dimuat naik.",
