@@ -23,7 +23,10 @@
             <span class="brand-mark"><i class="ri-truck-line"></i></span>
             <span class="brand-name">RT LorryLink</span>
         </div>
-        <button id="logout-btn" class="btn btn-ghost btn-sm hidden"><i class="ri-logout-box-r-line"></i> Log out</button>
+        <div style="display:flex;align-items:center;gap:8px">
+            <button id="lang-btn" type="button" class="btn btn-ghost btn-sm" translate="no">BM</button>
+            <button id="logout-btn" class="btn btn-ghost btn-sm hidden"><i class="ri-logout-box-r-line"></i> Log out</button>
+        </div>
     </header>
 
     <main class="app-main" id="main-content">
@@ -658,6 +661,7 @@
 
     <div id="toast-region" class="toast-region" role="status" aria-live="polite"></div>
 
+    <script src="i18n.js"></script>
     <script src="app.js"></script>
 </body>
 </html>
