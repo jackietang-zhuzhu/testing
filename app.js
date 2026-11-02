@@ -991,7 +991,7 @@ const app = {
         const { data: jobs, error } = await supabaseClient
             .from('jobs')
             .select('*, customers(company_name, contact_person, phone)')
-            .neq('status', 'archived') 
+            .not('status', 'in', '(archived,completed)')
             .order('created_at', { ascending: false });
             
         if (error) { console.error(error); if (!silent) rtJobsContainer.innerHTML = ui.errorBlock('Check your connection and try again.'); return; }
@@ -1047,7 +1047,7 @@ const app = {
                 let q = supabaseClient
                     .from('jobs')
                     .select('*, customers(company_name, contact_person, phone)')
-                    .eq('status', 'archived');
+                    .eq('status', 'completed');
                 // month '' = All: no date limit
                 if (month) q = q.gte('delivery_date', month + '-01').lt('delivery_date', this.nextMonthKey(month) + '-01');
                 return q.order('created_at', { ascending: false }).order('id');
@@ -1055,7 +1055,7 @@ const app = {
             this.fetchAllRows(() => supabaseClient
                 .from('jobs')
                 .select('delivery_date')
-                .eq('status', 'archived')
+                .eq('status', 'completed')
                 .order('delivery_date')
                 .order('id'))
         ]);
@@ -2243,8 +2243,8 @@ const app = {
         await this.attachJobDocs(jobs);
         if (silent && !this.viewIs('customerHome', 'customerHistory')) return;
         // jobs the admin removed (archived) are not shown to customers
-        const visible = (jobs || []).filter(j => j.status !== 'archived');
-        const removed = (jobs || []).filter(j => j.status === 'archived'); // shown on the History page
+        const visible = (jobs || []).filter(j => j.status !== 'archived' && j.status !== 'completed');
+        const removed = (jobs || []).filter(j => j.status === 'completed'); // shown on the History page
         const prevStages = this.knownStages;
         const movedToHistory = !!prevStages && removed.some(j => prevStages[j.id] !== undefined);
         this.knownStages = {};
@@ -2380,7 +2380,6 @@ const app = {
                     </div>
                     <div class="job-body" id="jb-${id}">
                         ${stage === 'rejected' ? this.rejectNotice(job) : this.customerSteps(stage, job)}
-                        ${job.status === 'completed' ? ui.completedNotice('order') : ''}
                         ${ui.route(job)}
                         ${ui.facts(job, { date: job.delivery_date })}
                         ${ui.photos(job, true)}
@@ -2909,12 +2908,12 @@ const app = {
         this.lastSig.myjobs = sig;
         // A job the admin archived leaves My jobs and moves to History
         const withJob = (bids || []).filter(b => b.jobs);
-        const activeNow = withJob.filter(b => b.jobs.status !== 'archived');
+        const activeNow = withJob.filter(b => b.jobs.status !== 'archived' && b.jobs.status !== 'completed');
         const prevActive = this.knownMyJobIds;
         this.knownMyJobIds = new Set(activeNow.map(b => b.jobs.id));
-        if (silent && prevActive && withJob.some(b => b.jobs.status === 'archived' && prevActive.has(b.jobs.id))) ui.notify('A job was moved to History');
+        if (silent && prevActive && withJob.some(b => b.jobs.status === 'completed' && prevActive.has(b.jobs.id))) ui.notify('A job was moved to History');
         this.renderMyJobs(activeNow);
-        this.renderTransporterHistory(withJob.filter(b => b.jobs.status === 'archived'));
+        this.renderTransporterHistory(withJob.filter(b => b.jobs.status === 'completed'));
     },
 
     showTransporterHistory() {
@@ -3016,7 +3015,6 @@ const app = {
                         ${ui.doStopUploads(job)}
                     </div>
                     ${doNotice}
-                    ${job.status === 'completed' ? ui.completedNotice('job') : ''}
                     ${this.adminToggle(id, open)}
                     <div class="job-foot">
                         ${ui.price('Your price', bid.proposed_price)}
@@ -3099,28 +3097,13 @@ const app = {
         if (!confirm(msg)) return;
         const { data, error } = await supabaseClient
             .from('jobs')
-            .update({ status: 'archived' })
+            .update({ status: 'completed' })
             .eq('id', jobId)
-            .in('status', ['assigned', 'delivered', 'pending_inv', 'completed'])
+            .in('status', ['assigned', 'delivered', 'pending_inv'])
             .select('id');
         if (error) { ui.notify('Error completing job: ' + error.message); return; }
         if (!data || !data.length) { ui.notify('Could not complete the job: it may already have been handled.'); return; }
         ui.toast('Job completed and moved to History.', 'success');
-        this.fetchJobsForRT();
-    },
-
-    // Admin: move a completed job to History
-    async archiveJob(jobId) {
-        if (!confirm('Move this completed job to History?')) return;
-        const { data, error } = await supabaseClient
-            .from('jobs')
-            .update({ status: 'archived' })
-            .eq('id', jobId)
-            .eq('status', 'completed')
-            .select('id');
-        if (error) { ui.notify('Error moving job to History: ' + error.message); return; }
-        if (!data || !data.length) { ui.notify('Could not move the job: it may already have been handled.'); return; }
-        ui.toast('Job moved to History.', 'success');
         this.fetchJobsForRT();
     },
 
@@ -3294,8 +3277,8 @@ const app = {
                         <div class="actions">
                             ${isAssigned
                                 ? `<button class="btn btn-secondary btn-sm" data-id="${id}" onclick="app.viewBids(this.dataset.id)">Assigned details</button>
-                                   ${(delivered && job.invoice_file && job.status !== 'completed') ? `<button class="btn btn-go btn-sm" data-id="${id}" onclick="app.completeJob(this.dataset.id)"><i class="ri-check-double-line"></i> Complete</button>` : ''}
-                                   ${job.status === 'completed' ? `<button class="btn btn-go btn-sm" data-id="${id}" onclick="app.archiveJob(this.dataset.id)"><i class="ri-archive-line"></i> Move to History</button>` : `<button class="btn btn-warn btn-sm" data-id="${id}" onclick="app.unassignJob(this.dataset.id)">Undo</button>`}`
+                                   ${(delivered && job.invoice_file && job.status !== 'completed') ? `<button class="btn btn-go btn-sm" data-id="${id}" onclick="app.completeJob(this.dataset.id)"><i class="ri-check-double-line"></i> Mark as complete</button>` : ''}
+                                   <button class="btn btn-warn btn-sm" data-id="${id}" onclick="app.unassignJob(this.dataset.id)">Undo</button>`
                                 : `<button class="btn btn-primary btn-sm" data-id="${id}" onclick="app.viewBids(this.dataset.id)">View bids</button>`
                             }
                             <button class="btn btn-danger-ghost btn-sm btn-icon" data-id="${id}" onclick="app.deleteJob(this.dataset.id)" aria-label="Archive job" title="Archive job"><i class="ri-delete-bin-line"></i></button>
@@ -3404,7 +3387,8 @@ const app = {
         const { data: jobs, error } = await supabaseClient
             .from('jobs')
             .select('*')
-            .in('status', ['assigned', 'delivered', 'pending_inv', 'completed'])
+            .eq('status', 'completed') // only finished jobs: archived ones are sometimes deleted by mistake, so they never count
+            .order('completed_at', { ascending: false, nullsFirst: false })
             .order('created_at', { ascending: false })
             .limit(5);
             
