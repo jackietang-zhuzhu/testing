@@ -1226,17 +1226,22 @@ const app = {
             const doc = docRes.data && docRes.data[0];
             awarded = !!((bidRes.data && bidRes.data.length) || (doc && (doc.po_url || doc.invoice_url)));
         }
-        const newStatus = awarded ? 'assigned' : 'open';
+        // A job that already has its DO goes back as 'delivered' and is put on hold (hold_completion):
+        // the database will not auto-complete it again, so it stays in Active jobs until the admin presses Mark as complete.
+        const hasDo = !!(job && job.do_url);
+        const newStatus = awarded ? (hasDo ? 'delivered' : 'assigned') : 'open';
+        const patch = { status: newStatus };
+        if (hasDo) patch.hold_completion = true;
 
         const { error } = await supabaseClient
             .from('jobs')
-            .update({ status: newStatus })
+            .update(patch)
             .eq('id', jobId);
 
         if (error) {
             ui.notify("Error restoring job: " + error.message);
         } else {
-            ui.notify("Job successfully restored.");
+            ui.notify(hasDo ? "Job restored. It stays in Active jobs until you press Mark as complete." : "Job successfully restored.");
             this.fetchHistoryForRT();
         }
     },
