@@ -333,7 +333,6 @@
                     <p class="page-sub">Your orders and delivery status.</p>
                 </div>
                 <div style="display:flex;gap:8px;flex-shrink:0">
-                    <button onclick="app.showCustomerHistory()" class="btn btn-secondary btn-sm"><i class="ri-history-line"></i> History</button>
                     <button onclick="app.openCustomerNewJob()" class="btn btn-primary btn-sm"><i class="ri-add-line"></i> New order</button>
                 </div>
             </div>
@@ -359,10 +358,7 @@
 
         <!-- VIEW: CUSTOMER HISTORY (orders we have removed from the active list) -->
         <div id="view-customer-history" class="view hidden">
-            <div class="back-row">
-                <button onclick="app.showCustomerHome()" class="back-btn" aria-label="Back to my orders"><i class="ri-arrow-left-line"></i></button>
-                <h2 class="page-title">History</h2>
-            </div>
+            <h2 class="page-title">History</h2>
             <p class="page-sub">Past orders that are no longer in your active list. Pick a delivery month to narrow down.</p>
             <div id="customer-hist-months" class="chips" aria-label="Choose delivery month"></div>
             <div id="customer-history-container" class="stack"></div>
@@ -640,6 +636,18 @@
             </li>
             <li>
                 <button class="tab" data-tab="myhistory" onclick="app.showTransporterHistory()">
+                    <i class="ri-history-line"></i><span>History</span>
+                </button>
+            </li>
+        </ul>
+        <ul id="nav-customer" class="tabbar hidden flex">
+            <li>
+                <button class="tab is-active" data-tab="orders" onclick="app.showCustomerHome()">
+                    <i class="ri-list-check"></i><span>Orders</span>
+                </button>
+            </li>
+            <li>
+                <button class="tab" data-tab="custhistory" onclick="app.showCustomerHistory()">
                     <i class="ri-history-line"></i><span>History</span>
                 </button>
             </li>
