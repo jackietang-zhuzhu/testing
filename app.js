@@ -33,7 +33,8 @@ const views = {
 const navs = {
     container: document.getElementById('bottom-nav'),
     rt: document.getElementById('nav-rt'),
-    transporter: document.getElementById('nav-transporter')
+    transporter: document.getElementById('nav-transporter'),
+    customer: document.getElementById('nav-customer')
 };
 
 const btnLogout = document.getElementById('logout-btn');
@@ -607,6 +608,7 @@ const app = {
         navs.container.classList.add('hidden');
         navs.rt.classList.replace('flex', 'hidden');
         navs.transporter.classList.replace('flex', 'hidden');
+        navs.customer.classList.replace('flex', 'hidden');
         
         // Wipe DOM containers
         document.getElementById('rt-jobs-container').innerHTML = '';
@@ -658,6 +660,7 @@ const app = {
             this.showView('rtHome');
             navs.rt.classList.replace('hidden', 'flex');
             navs.transporter.classList.replace('flex', 'hidden');
+            navs.customer.classList.replace('flex', 'hidden');
             this.fetchJobsForRT();
             return;
         }
@@ -672,9 +675,9 @@ const app = {
         if (customer) {
             this.currentUserRole = 'customer';
             this.loadPrimaryAddress().catch(() => {}); // fetch the saved primary address now, so New order can fill it in at once
-            navs.container.classList.add('hidden'); // no bottom tabs for customers yet
             navs.rt.classList.replace('flex', 'hidden');
             navs.transporter.classList.replace('flex', 'hidden');
+            navs.customer.classList.replace('hidden', 'flex');
             document.getElementById('customer-welcome').textContent = 'Welcome, ' + (customer.company_name || 'customer');
             this.showCustomerHome();
         } else {
@@ -689,6 +692,7 @@ const app = {
 
             navs.transporter.classList.replace('hidden', 'flex');
             navs.rt.classList.replace('flex', 'hidden');
+            navs.customer.classList.replace('flex', 'hidden');
             this.showTransporterBoard(); 
         }
     },
@@ -936,6 +940,9 @@ const app = {
             views[viewName].classList.remove('hidden');
                         views[viewName].classList.add('flex');
         }
+        // Customer: the bottom tabs hide on the order form (they would cover the submit button) and come back on the lists
+        if (viewName === 'customerNewJob') navs.container.classList.add('hidden');
+        else if (viewName === 'customerHome' || viewName === 'customerHistory') navs.container.classList.remove('hidden');
     },
 
     // ==========================================
@@ -1801,6 +1808,7 @@ const app = {
     // --- CUSTOMER: draft jobs sent to RT for approval ---
     // ==========================================
     showCustomerHome() {
+        ui.setTab('orders');
         this.showView('customerHome');
         this.fetchCustomerJobs();
     },
@@ -2470,6 +2478,7 @@ const app = {
     // --- ADMIN: review a customer draft, add PO, post ---
     // ==========================================
     showCustomerHistory() {
+        ui.setTab('custhistory');
         this.showView('customerHistory');
         this.renderCustomerHistory();   // draw what we already have straight away
         this.fetchCustomerJobs(true);   // then refresh quietly in the background
