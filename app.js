@@ -2110,7 +2110,7 @@ const app = {
         input.value = '';
         if (url && !saved) { ui.notify('Could not save the PO to the order. Please try again.'); return; }
         if (!saved) return;
-        ui.notify('PO uploaded. Once all documents are in, the order moves to History.');
+        ui.notify('PO uploaded. Please wait for the admin to upload the INV. You can view the order in History.');
         this.fetchCustomerJobs();
     },
 
@@ -2131,7 +2131,7 @@ const app = {
         this.uploading = 0;
         input.value = '';
         if (!saved) return;
-        ui.notify('Invoice uploaded. If every document is in, the job moves to History.');
+        ui.notify('Invoice uploaded. Please make sure all documents are correct. Once all documents are uploaded, the job will move to History.');
         this.refreshAdminJobViews();
     },
 
@@ -2893,7 +2893,7 @@ const app = {
         }
 
         this.uploading = 0;
-        ui.notify(stop === null ? (isAdmin ? "DO uploaded." : "DO uploaded. Once all documents are in, the job moves to History.") : `DO uploaded for drop-off ${stop + 1}.`);
+        ui.notify(stop === null ? (isAdmin ? "DO uploaded. Please make sure all documents are correct. Once all documents are uploaded, the job will move to History." : "DO uploaded. You can view this job in History later.") : `DO uploaded for drop-off ${stop + 1}.`);
         input.value = '';
         if (isAdmin) this.refreshAdminJobViews(); else this.fetchMyJobs();
     },
@@ -3091,7 +3091,7 @@ const app = {
         this.uploading = 0;
         input.value = '';
         if (!saved) return;
-        ui.notify('PO uploaded. If every document is in, the job moves to History.');
+        ui.notify('PO uploaded. Please make sure all documents are correct. Once all documents are uploaded, the job will move to History.');
         this.refreshAdminJobViews();
     },
 
