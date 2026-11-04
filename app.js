@@ -158,6 +158,21 @@ const ui = {
             hour: '2-digit', minute: '2-digit', hour12: true
         }));
     },
+    // A short job reference that every role sees the same way (admin, customer, transporter).
+    // Built from the job's own creation date (Malaysia time, so a phone's time zone cannot change it)
+    // and the last 4 characters of its id, e.g. RT-261104-A3F9. Nothing is stored in the database.
+    jobNoText(job) {
+        if (!job || !job.id || !job.created_at) return '';
+        const d = new Date(job.created_at);
+        if (isNaN(d)) return '';
+        const day = d.toLocaleDateString('en-CA', { timeZone: 'Asia/Kuala_Lumpur' }).replace(/-/g, '').slice(2); // YYMMDD
+        const tail = String(job.id).replace(/[^0-9a-f]/gi, '').slice(-4).toUpperCase();
+        return tail ? `RT-${day}-${tail}` : '';
+    },
+    jobNo(job) {
+        const n = this.jobNoText(job);
+        return n ? `<span class="job-no">${this.esc(n)}</span>` : '';
+    },
     posted(iso, label = 'Posted') { return iso ? `${label} ${this.fmtDateTime(iso)}` : ''; },
     money(n) {
         const v = Number(n);
@@ -1175,7 +1190,7 @@ const app = {
                 <article class="job-card${open ? '' : ' is-collapsed'}" data-job="${id}">
                     <div class="job-head">
                         ${ui.pill('Completed', 'done', 'ri-check-double-line')}
-                        <span class="job-time">${ui.posted(job.created_at)}</span>
+                        <span class="job-time">${ui.jobNo(job)}${ui.posted(job.created_at)}</span>
                     </div>
                     ${this.adminSummary(job)}
                     <div class="job-body" id="jb-${id}">
@@ -1235,7 +1250,7 @@ const app = {
             const hay = [
                 c.company_name, c.contact_person,
                 j.source_loc, j.dest_loc, ...ui.stops(j).map(s => s.loc),
-                j.item_desc, j.remarks,
+                j.item_desc, j.remarks, ui.jobNoText(j),
                 cs.pickup.pic, cs.pickup.phone, ...cs.drops.flatMap(d => [d.pic, d.phone])
             ].filter(Boolean).join(' ').toLowerCase();
             return words.every(w => hay.includes(w)); // every word must match somewhere
@@ -1318,7 +1333,7 @@ const app = {
                 <article class="job-card">
                     <div class="job-head">
                         ${ui.pill('Awaiting review', 'warn', 'ri-time-line')}
-                        <span class="job-time">${ui.posted(job.created_at)}</span>
+                        <span class="job-time">${ui.jobNo(job)}${ui.posted(job.created_at)}</span>
                     </div>
                     <p class="remarks"><b>Customer:</b> ${ui.esc(c.company_name || 'Unknown customer')}</p>
                     ${ui.route(job)}
@@ -1658,7 +1673,7 @@ const app = {
             <article class="job-card summary">
                 <div class="job-head">
                     ${bidCount ? ui.pill(`${bidCount} bid${bidCount === 1 ? '' : 's'}`, 'info') : ui.pill('No bids yet', 'neutral')}
-                    <span class="job-time">${ui.posted(job.created_at)}</span>
+                    <span class="job-time">${ui.jobNo(job)}${ui.posted(job.created_at)}</span>
                 </div>
                 ${ui.route(job)}
                 ${ui.facts(job, { date: job.delivery_date, dateLabel: 'Original date', delivered: !!job.do_url })}
@@ -2439,7 +2454,7 @@ const app = {
                 <article class="job-card${open ? '' : ' is-collapsed'}" data-job="${id}">
                     <div class="job-head">
                         ${pill}
-                        <span class="job-time">${ui.posted(job.created_at, 'Ordered')}</span>
+                        <span class="job-time">${ui.jobNo(job)}${ui.posted(job.created_at, 'Ordered')}</span>
                     </div>
                     <div class="job-summary">
                         <div class="sum-route">${sumRoute}</div>
@@ -2569,7 +2584,7 @@ const app = {
                 <article class="job-card${open ? '' : ' is-collapsed'}" data-job="${id}">
                     <div class="job-head">
                         ${pill}
-                        <span class="job-time">${ui.posted(job.created_at, 'Ordered')}</span>
+                        <span class="job-time">${ui.jobNo(job)}${ui.posted(job.created_at, 'Ordered')}</span>
                     </div>
                     ${this.adminSummary(job)}
                     <div class="job-body" id="jb-${id}">
@@ -2624,7 +2639,7 @@ const app = {
             <article class="job-card summary">
                 <div class="job-head">
                     ${ui.pill('Awaiting review', 'warn', 'ri-time-line')}
-                    <span class="job-time">${ui.posted(job.created_at)}</span>
+                    <span class="job-time">${ui.jobNo(job)}${ui.posted(job.created_at)}</span>
                 </div>
                 <p class="remarks">
                     <b>${ui.esc(c.company_name || 'Unknown customer')}</b><br>
@@ -3028,7 +3043,7 @@ const app = {
                 <article class="job-card is-dim${open ? '' : ' is-collapsed'}" data-job="${id}">
                     <div class="job-head">
                         ${ui.pill('Completed', 'done', 'ri-check-double-line')}
-                        <span class="job-time">${ui.posted(job.created_at)}</span>
+                        <span class="job-time">${ui.jobNo(job)}${ui.posted(job.created_at)}</span>
                     </div>
                     ${this.adminSummary(job, finalDate)}
                     <div class="job-body" id="jb-${id}">
@@ -3083,7 +3098,7 @@ const app = {
                 <article class="job-card is-mine${open ? '' : ' is-collapsed'}" data-job="${id}">
                     <div class="job-head">
                         <span style="display:inline-flex;gap:6px;flex-wrap:wrap">${ui.pill('Assigned to you', 'active', 'ri-truck-fill')}${doPill}</span>
-                        <span class="job-time">${ui.posted(job.created_at)}</span>
+                        <span class="job-time">${ui.jobNo(job)}${ui.posted(job.created_at)}</span>
                     </div>
                     ${this.adminSummary(job, finalDate)}
                     <div class="job-body" id="jb-${id}">
@@ -3346,7 +3361,7 @@ const app = {
                 <article class="job-card${open ? '' : ' is-collapsed'}" data-job="${id}">
                     <div class="job-head">
                         <span style="display:inline-flex;gap:6px;flex-wrap:wrap">${this.statusPill(job)}${todoPill}</span>
-                        <span class="job-time">${ui.posted(job.created_at)}</span>
+                        <span class="job-time">${ui.jobNo(job)}${ui.posted(job.created_at)}</span>
                     </div>
                     ${this.adminSummary(job)}
                     <div class="job-body" id="jb-${id}">
@@ -3445,7 +3460,7 @@ const app = {
                 <article class="job-card${banned ? ' is-dim' : ''}">
                     <div class="job-head">
                         <span style="display:inline-flex;gap:6px;flex-wrap:wrap">${ui.pill('Open', 'info', 'ri-megaphone-line')}${mine.length ? ui.pill('Bid sent', 'info', 'ri-check-line') : ''}</span>
-                        <span class="job-time">${ui.posted(job.created_at)}</span>
+                        <span class="job-time">${ui.jobNo(job)}${ui.posted(job.created_at)}</span>
                     </div>
                     ${ui.route(job, { contacts: false })}
                     ${ui.facts(job, { date: job.delivery_date })}
