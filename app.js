@@ -454,8 +454,16 @@ const ui = {
         const strip = (d, stop, name) => `<div class="photo-strip is-small" style="align-items:center;gap:12px;margin-top:8px">${d ? this.fileThumb(d.url, 'Delivery Order') + `<a class="btn btn-secondary btn-sm" href="${this.esc(this.downloadUrl(d.url, name))}" download><i class="ri-download-2-line"></i> Download</a>` : ''}${upBtn(stop, !!d)}</div>`;
         if (total === 1) {
             const d = items[0] || null;
+            // No DO yet: same layout as the PO / INV blocks (title, grey note line, button)
+            if (!d) {
+                return `<div class="remarks do-block">
+                <b>Delivery Order (DO)</b>
+                <p style="margin:4px 0 8px;font-size:.8125rem;color:var(--muted)">No DO yet. The transporter can upload it, or you can upload it here.</p>
+                ${upBtn(null, false)}
+            </div>`;
+            }
             return `<div class="remarks do-block">
-                <div style="${head}"><b>Delivery Order (DO)</b>${d ? when(d) : note('Not uploaded yet')}</div>
+                <div style="${head}"><b>Delivery Order (DO)</b>${when(d)}</div>
                 ${strip(d, null, 'Delivery-Order')}
             </div>`;
         }
