@@ -320,11 +320,15 @@ input[type="file"]::file-selector-button {
     position: relative;
     display: flex; flex-direction: column; gap: 14px;
 }
-.route::before {
+/* The line is drawn per stop, from this stop's dot centre to the next stop's dot centre
+   (14px = the gap), so it can never run past the first or last dot, however tall a stop is. */
+.route-stop:not(:last-child)::after {
     content: "";
     position: absolute;
-    left: 8px; top: 16px; bottom: 16px;
+    left: 8px; top: 12px;
+    height: calc(100% + 14px);
     border-left: 2px dashed var(--road);
+    z-index: 0;
 }
 .route-stop {
     position: relative;
@@ -335,11 +339,11 @@ input[type="file"]::file-selector-button {
 .route-stop::before {
     content: "";
     position: absolute;
-    left: 1px; top: 50%;
+    left: 1px; top: 4px; /* dot centre sits 12px below the top of the stop */
     width: 16px; height: 16px;
-    transform: translateY(-50%);
     border-radius: 50%;
     box-sizing: border-box;
+    z-index: 1;
 }
 .route-from::before { background: var(--surface); border: 3px solid var(--harbour); }
 .route-to::before { background: var(--harbour); border: 3px solid var(--road); }
@@ -656,7 +660,6 @@ input[type="file"]::file-selector-button {
 
 /* ---------- Person in charge + phone on a route stop ---------- */
 .route-stop.has-contact { flex-wrap: wrap; row-gap: 2px; }
-.route-stop.has-contact::before { top: 12px; }
 .route-contact {
     flex: 0 0 100%;
     display: flex; flex-wrap: wrap; gap: 2px 14px;
