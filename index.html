@@ -23,8 +23,11 @@
             <span class="brand-mark"><i class="ri-truck-line"></i></span>
             <span class="brand-name">RT LorryLink</span>
         </div>
-        <div style="display:flex;align-items:center;gap:8px">
-            <button id="lang-btn" type="button" class="btn btn-ghost btn-sm" translate="no">BM</button>
+        <div class="header-actions">
+            <div id="lang-seg" class="lang-seg" translate="no" data-current="en">
+                <span aria-hidden="true">EN</span><span aria-hidden="true">BM</span>
+                <button id="lang-btn" type="button" class="btn" aria-label="Switch language / Tukar bahasa">BM</button>
+            </div>
             <button id="logout-btn" class="btn btn-ghost btn-sm hidden"><i class="ri-logout-box-r-line"></i> Log out</button>
         </div>
     </header>
@@ -670,6 +673,13 @@
     <div id="toast-region" class="toast-region" role="status" aria-live="polite"></div>
 
     <script src="lang.js"></script>
+    <script>
+    // Highlight the current language in the EN | BM switch (lang.js reloads the page on every switch).
+    (function () {
+        var seg = document.getElementById('lang-seg');
+        if (seg && window.I18N) seg.dataset.current = window.I18N.lang() === 'ms' ? 'bm' : 'en';
+    })();
+    </script>
     <script src="app.js"></script>
 </body>
 </html>
