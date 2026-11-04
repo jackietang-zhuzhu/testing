@@ -127,7 +127,7 @@ const ui = {
         let tone = 'info';
         if (/^uploading/i.test(m) || /already/i.test(m)) tone = 'info'; // still in progress, not a success yet
         else if (/error|failed|invalid|cannot|could not|too large|suspended|blocked/i.test(m)) tone = 'error';
-        else if (/success|sent|posted|placed|published|awarded|accepted|submitted|removed|undone|uploaded|cancelled|updated|restored|rejected|deleted|resubmitted/i.test(m)) tone = 'success';
+        else if (/success|sent|posted|placed|published|awarded|accepted|submitted|removed|undone|uploaded|replaced|cancelled|updated|restored|rejected|deleted|resubmitted/i.test(m)) tone = 'success';
         else if (/^please /i.test(m)) tone = 'error'; // "Please enter / specify / upload ..." = the form needs fixing
         this.toast(m, tone);
     },
@@ -2154,6 +2154,7 @@ const app = {
         const file = input.files && input.files[0];
         const jobId = input.dataset.jobId;
         if (!file || !jobId) return;
+        const replaced = !!input.dataset.replace;
         this.uploading = Date.now(); // pauses the auto-refresh while uploading
         ui.notify('Uploading PO...');
         const url = await this.uploadDocFile(file, 'po', 'PO');
@@ -2162,7 +2163,7 @@ const app = {
         input.value = '';
         if (url && !saved) { ui.notify('Could not save the PO to the order. Please try again.'); return; }
         if (!saved) return;
-        ui.notify('PO uploaded. Please wait for the admin to upload the INV. You can view the order in History.');
+        ui.notify(replaced ? 'PO replaced. Please make sure it is the correct file.' : 'PO uploaded. Please wait for the admin to upload the INV. You can view the order in History.');
         this.fetchCustomerJobs();
     },
 
@@ -2171,6 +2172,7 @@ const app = {
         const file = input.files && input.files[0];
         const jobId = input.dataset.jobId;
         if (!file || !jobId) return;
+        const replaced = !!input.dataset.replace;
         this.uploading = Date.now();
         ui.notify('Uploading invoice...');
         const url = await this.uploadDocFile(file, 'inv', 'INV');
@@ -2183,7 +2185,7 @@ const app = {
         this.uploading = 0;
         input.value = '';
         if (!saved) return;
-        ui.notify('Invoice uploaded. Please make sure all documents are correct. Once all documents are uploaded, the job will move to History.');
+        ui.notify(replaced ? 'Invoice replaced. Please make sure it is the correct file.' : 'Invoice uploaded. Please make sure all documents are correct. Once all documents are uploaded, the job will move to History.');
         this.refreshAdminJobViews();
     },
 
@@ -2895,7 +2897,7 @@ const app = {
         if (input.dataset.replaceOk) { delete input.dataset.replaceOk; return true; }
         ev.preventDefault();
         ui.confirm(message, { title: 'Replace file?', okText: 'Replace' }).then(ok => {
-            if (ok) { input.dataset.replaceOk = '1'; input.click(); }
+            if (ok) { input.dataset.replace = '1'; input.dataset.replaceOk = '1'; input.click(); }
         });
         return false;
     },
@@ -2906,6 +2908,7 @@ const app = {
         if (!file || !jobId) return;
         // data-stop is only set on the per-drop-off buttons of a job with several drop-offs
         const stop = (input.dataset.stop === undefined || input.dataset.stop === '') ? null : parseInt(input.dataset.stop, 10);
+        const replaced = !!input.dataset.replace;
 
         const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
         if (!file.type.startsWith('image/') && !isPdf) {
@@ -2956,7 +2959,7 @@ const app = {
         }
 
         this.uploading = 0;
-        ui.notify(stop === null ? (isAdmin ? "DO uploaded. Please make sure all documents are correct. Once all documents are uploaded, the job will move to History." : "DO uploaded. You can view this job in History later.") : `DO uploaded for drop-off ${stop + 1}.`);
+        ui.notify(replaced ? (stop === null ? 'DO replaced. Please make sure it is the correct file.' : `DO replaced for drop-off ${stop + 1}. Please make sure it is the correct file.`) : (stop === null ? (isAdmin ? "DO uploaded. Please make sure all documents are correct. Once all documents are uploaded, the job will move to History." : "DO uploaded. You can view this job in History later.") : `DO uploaded for drop-off ${stop + 1}.`));
         input.value = '';
         if (isAdmin) this.refreshAdminJobViews(); else this.fetchMyJobs();
     },
@@ -3142,6 +3145,7 @@ const app = {
         const file = input.files && input.files[0];
         const jobId = input.dataset.jobId;
         if (!file || !jobId) return;
+        const replaced = !!input.dataset.replace;
         this.uploading = Date.now();
         ui.notify('Uploading PO...');
         const url = await this.uploadDocFile(file, 'po', 'PO');
@@ -3154,7 +3158,7 @@ const app = {
         this.uploading = 0;
         input.value = '';
         if (!saved) return;
-        ui.notify('PO uploaded. Please make sure all documents are correct. Once all documents are uploaded, the job will move to History.');
+        ui.notify(replaced ? 'PO replaced. Please make sure it is the correct file.' : 'PO uploaded. Please make sure all documents are correct. Once all documents are uploaded, the job will move to History.');
         this.refreshAdminJobViews();
     },
 
