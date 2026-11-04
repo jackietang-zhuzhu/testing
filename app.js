@@ -158,6 +158,12 @@ const ui = {
             hour: '2-digit', minute: '2-digit', hour12: true
         }));
     },
+    // Today's date as YYYY-MM-DD in Malaysia time (toISOString() would give the UTC date, which is
+    // still "yesterday" between 00:00 and 08:00 here, so past dates could be picked)
+    todayMY() {
+        return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kuala_Lumpur' });
+    },
+
     // A short job reference that every role sees the same way (admin, customer, transporter).
     // Built from the job's own creation date (Malaysia time, so a phone's time zone cannot change it)
     // and the last 4 characters of its id, e.g. RT-261104-A3F9. Nothing is stored in the database.
@@ -564,7 +570,7 @@ const app = {
         document.getElementById('cj-item').addEventListener('change', () => this.toggleCustomerOtherItem());
 		document.getElementById('forgot-password-form').addEventListener('submit', (e) => this.handleForgotPassword(e));
 		document.getElementById('counter-offer-form').addEventListener('submit', (e) => this.submitCounterOffer(e));
-		document.getElementById('job-date').min = new Date().toISOString().split('T')[0];
+		document.getElementById('job-date').min = ui.todayMY();
         btnLogout.addEventListener('click', () => this.handleLogout());
 
         const { data: { session } } = await supabaseClient.auth.getSession();
@@ -581,15 +587,23 @@ const app = {
     // --- AUTHENTICATION FUNCTIONS ---
     async handleLogin(e) {
         e.preventDefault();
-        const email = document.getElementById('login-email').value;
-        const password = document.getElementById('login-password').value;
+        const btn = e.currentTarget.querySelector('button[type="submit"]');
+        if (btn && btn.disabled) return; // already logging in
+        const idleText = btn ? btn.textContent : '';
+        if (btn) { btn.disabled = true; btn.textContent = 'Logging in...'; }
+        try {
+            const email = document.getElementById('login-email').value;
+            const password = document.getElementById('login-password').value;
 
-        const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+            const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
 
-        if (error) {
-            ui.notify("Login Failed: " + error.message);
-        } else {
-            this.routeUser(data.user);
+            if (error) {
+                ui.notify("Login Failed: " + error.message);
+            } else {
+                await this.routeUser(data.user); // the button stays busy until the next screen is ready
+            }
+        } finally {
+            if (btn) { btn.disabled = false; btn.textContent = idleText; }
         }
     },
 
@@ -1026,6 +1040,7 @@ const app = {
 
     async autoRefresh() {
         if (!this.currentUser || document.hidden) return;
+        if (ui._dialogDone) return; // a confirm dialog is open: do not redraw the screen under it
         if (this.uploading && Date.now() - this.uploading < 120000) return; // don't redraw during a DO upload
         // Pick up bans/unbans done in Supabase before the lists are redrawn
         await this.refreshTransporterProfile();
@@ -1507,7 +1522,7 @@ const app = {
             }
         }
 
-        if (!await ui.confirm("Are you sure you want to accept this job for RM " + offeredPrice + "?", { title: 'Accept job', okText: 'Accept job' })) return;
+        if (!await ui.confirm("Are you sure you want to accept this job for RM " + ui.money(offeredPrice) + "?", { title: 'Accept job', okText: 'Accept job' })) return;
 
         const newBid = {
             job_id: jobId,
@@ -1569,8 +1584,14 @@ const app = {
         const maxDate = new Date(baseDate);
         maxDate.setDate(baseDate.getDate() + 3);
 
-        dateInput.min = minDate.toISOString().split('T')[0];
-        dateInput.max = maxDate.toISOString().split('T')[0];
+        // Within 3 days of the posted date, but never in the past
+        const maxStr = maxDate.toISOString().split('T')[0];
+        let minStr = minDate.toISOString().split('T')[0];
+        const today = ui.todayMY();
+        if (minStr < today) minStr = today;
+        if (minStr > maxStr) minStr = maxStr;
+        dateInput.min = minStr;
+        dateInput.max = maxStr;
         
         this.showView('counterOffer');
     },
@@ -1904,7 +1925,7 @@ const app = {
         this.editingHadStops = mode === 'edit' && ui.stops(job).length > 0;
         this.editingHadContacts = mode === 'edit' && ui.hasContacts(job);
         this.toggleCustomerOtherItem();
-        document.getElementById('cj-date').min = new Date().toISOString().split('T')[0];
+        document.getElementById('cj-date').min = ui.todayMY();
 
         document.getElementById('cj-title').textContent =
             mode === 'edit' ? (this.editingWasRejected ? 'Edit & resubmit' : 'Edit order') : (mode === 'copy' ? 'Book again' : 'New order');
