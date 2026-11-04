@@ -339,23 +339,6 @@
                     <button onclick="app.openCustomerNewJob()" class="btn btn-primary btn-sm"><i class="ri-add-line"></i> New order</button>
                 </div>
             </div>
-            <!-- Delivery-date filter (filters the list already loaded; nothing is sent to the database) -->
-            <div class="filter-bar">
-                <div class="field-row">
-                    <div class="field">
-                        <label class="label" for="cust-from">Delivery from</label>
-                        <input type="date" id="cust-from" class="input" onchange="app.applyJobFilter('cust')">
-                    </div>
-                    <div class="field">
-                        <label class="label" for="cust-to">Delivery to</label>
-                        <input type="date" id="cust-to" class="input" onchange="app.applyJobFilter('cust')">
-                    </div>
-                </div>
-                <div class="filter-meta" data-idle-hide>
-                    <span class="hint" id="cust-count"></span>
-                    <button type="button" class="link-btn" id="cust-clear" style="font-size:.8125rem;display:none" onclick="app.clearJobFilter('cust')">Clear filters</button>
-                </div>
-            </div>
             <div id="customer-jobs-container" class="stack"></div>
         </div>
 
@@ -512,23 +495,6 @@
                 <h2 class="page-title">Open jobs</h2>
                 <p class="page-sub">Accept at the posted price or send a counter-offer.</p>
             </div>
-            <!-- Delivery-date filter (filters the list already loaded; nothing is sent to the database) -->
-            <div class="filter-bar">
-                <div class="field-row">
-                    <div class="field">
-                        <label class="label" for="board-from">Delivery from</label>
-                        <input type="date" id="board-from" class="input" onchange="app.applyJobFilter('board')">
-                    </div>
-                    <div class="field">
-                        <label class="label" for="board-to">Delivery to</label>
-                        <input type="date" id="board-to" class="input" onchange="app.applyJobFilter('board')">
-                    </div>
-                </div>
-                <div class="filter-meta">
-                    <span class="hint" id="board-count"></span>
-                    <button type="button" class="link-btn" id="board-clear" style="font-size:.8125rem;display:none" onclick="app.clearJobFilter('board')">Clear filters</button>
-                </div>
-            </div>
             <!-- Container for dynamic Transporter jobs -->
             <div id="transporter-jobs-container" class="stack"></div>
 
@@ -544,23 +510,6 @@
             <div>
                 <h2 class="page-title">My assigned jobs</h2>
                 <p class="page-sub">Loads awarded to your company.</p>
-            </div>
-            <!-- Delivery-date filter (filters the list already loaded; nothing is sent to the database) -->
-            <div class="filter-bar">
-                <div class="field-row">
-                    <div class="field">
-                        <label class="label" for="mine-from">Delivery from</label>
-                        <input type="date" id="mine-from" class="input" onchange="app.applyJobFilter('mine')">
-                    </div>
-                    <div class="field">
-                        <label class="label" for="mine-to">Delivery to</label>
-                        <input type="date" id="mine-to" class="input" onchange="app.applyJobFilter('mine')">
-                    </div>
-                </div>
-                <div class="filter-meta">
-                    <span class="hint" id="mine-count"></span>
-                    <button type="button" class="link-btn" id="mine-clear" style="font-size:.8125rem;display:none" onclick="app.clearJobFilter('mine')">Clear filters</button>
-                </div>
             </div>
             <!-- Container for dynamic assigned jobs -->
             <div id="my-jobs-container" class="stack"></div>
