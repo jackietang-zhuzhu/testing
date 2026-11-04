@@ -300,6 +300,7 @@
         "Not uploaded yet": "Belum dimuat naik",
         "Upload your PO so we can prepare your invoice.": "Muat naik PO anda supaya kami boleh menyediakan invois anda.",
         "Upload the invoice once it is ready. The customer will see it on their order.": "Muat naik invois apabila siap. Pelanggan akan melihatnya pada pesanan mereka.",
+        "No DO yet. The transporter can upload it, or you can upload it here.": "Belum ada DO. Pengangkut boleh memuat naiknya, atau anda boleh memuat naik di sini.",
         "No PO yet. The customer can upload it, or you can upload it here.": "Belum ada PO. Pelanggan boleh memuat naiknya, atau anda boleh memuat naik di sini.",
         "Upload one DO for each drop-off": "Muat naik satu DO untuk setiap lokasi penghantaran",
         "Image or PDF, max 10 MB. The job counts as delivered once every drop-off has its DO.": "Imej atau PDF, maksimum 10 MB. Kerja dikira telah dihantar apabila setiap lokasi penghantaran mempunyai DO.",
