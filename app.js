@@ -69,6 +69,58 @@ const ui = {
         }, ms);
     },
 
+    // Styled replacement for window.confirm(): resolves true / false.
+    // Same card, buttons and colours as the order check dialog (#dialog-modal in index.html).
+    //   tone 'go' = green confirm button, 'danger' = red (cancelling, deleting, undoing)
+    confirm(message, { title = 'Please confirm', okText = 'Confirm', cancelText = 'Go back', tone = 'go' } = {}) {
+        const modal = document.getElementById('dialog-modal');
+        if (!modal) return Promise.resolve(window.confirm(message));
+        const t = (x) => (window.I18N ? window.I18N.t(x) : x);
+        if (this._dialogDone) this._dialogDone(false); // a second dialog replaces the first one
+
+        const titleEl = document.getElementById('dialog-title');
+        const textEl = document.getElementById('dialog-text');
+        const okBtn = document.getElementById('dialog-ok');
+        const cancelBtn = document.getElementById('dialog-cancel');
+        titleEl.textContent = t(title);
+        textEl.replaceChildren(...String(t(String(message))).split('\n').map(line => {
+            const p = document.createElement('p');
+            p.textContent = line; // textContent: never parsed as HTML
+            return p;
+        }));
+        okBtn.textContent = t(okText);
+        cancelBtn.textContent = t(cancelText);
+        okBtn.className = 'btn ' + (tone === 'danger' ? 'btn-danger' : 'btn-go');
+
+        const opener = document.activeElement;
+        modal.classList.remove('hidden');
+        (tone === 'danger' ? cancelBtn : okBtn).focus(); // never default-focus a destructive button
+
+        return new Promise(resolve => {
+            const finish = (answer) => {
+                modal.classList.add('hidden');
+                okBtn.onclick = cancelBtn.onclick = modal.onclick = null;
+                document.removeEventListener('keydown', onKey, true);
+                this._dialogDone = null;
+                if (opener && opener.focus) opener.focus();
+                resolve(answer);
+            };
+            const onKey = (ev) => {
+                if (ev.key === 'Escape') { ev.preventDefault(); finish(false); }
+                else if (ev.key === 'Tab') { // keep focus inside the dialog
+                    const first = cancelBtn, last = okBtn;
+                    if (ev.shiftKey && document.activeElement === first) { ev.preventDefault(); last.focus(); }
+                    else if (!ev.shiftKey && document.activeElement === last) { ev.preventDefault(); first.focus(); }
+                }
+            };
+            this._dialogDone = finish;
+            okBtn.onclick = () => finish(true);
+            cancelBtn.onclick = () => finish(false);
+            modal.onclick = (ev) => { if (ev.target === modal) finish(false); };
+            document.addEventListener('keydown', onKey, true);
+        });
+    },
+
     // Picks a tone from the wording of the message
     notify(message) {
         const m = String(message);
@@ -286,7 +338,7 @@ const ui = {
                 <span class="do-upload-label">${this.esc(this.dropLabel(job, i))}</span>
                 <label class="btn ${done ? 'btn-secondary' : 'btn-primary'} btn-sm" style="cursor:pointer">
                     <i class="ri-upload-2-line"></i> ${done ? 'Replace DO' : 'Upload DO'}
-                    <input type="file" accept="image/*,application/pdf" hidden data-job-id="${this.esc(job.id)}" data-stop="${i}" ${done ? `onclick="if(!confirm('This will replace the DO already uploaded for this drop-off. Continue?')) event.preventDefault()"` : ''} onchange="app.uploadDO(this)">
+                    <input type="file" accept="image/*,application/pdf" hidden data-job-id="${this.esc(job.id)}" data-stop="${i}" ${done ? `onclick="return app.confirmReplace(event, this, 'This will replace the DO already uploaded for this drop-off. Continue?')"` : ''} onchange="app.uploadDO(this)">
                 </label>
             </div>`;
         }).join('');
@@ -320,7 +372,7 @@ const ui = {
         const uploadBtn = upload
             ? `<label class="btn ${url ? 'btn-secondary' : 'btn-primary'}${sm}" style="cursor:pointer">
                     <i class="ri-upload-2-line"></i> ${url ? 'Replace' : 'Upload'} ${this.esc(noun)}
-                    <input type="file" accept="image/*,application/pdf" hidden data-job-id="${this.esc(job.id)}" ${url ? `onclick="if(!confirm('This will replace the ${this.esc(noun)} already uploaded. Continue?')) event.preventDefault()"` : ''} onchange="app.${handler}(this)">
+                    <input type="file" accept="image/*,application/pdf" hidden data-job-id="${this.esc(job.id)}" ${url ? `onclick="return app.confirmReplace(event, this, 'This will replace the ${this.esc(noun)} already uploaded. Continue?')"` : ''} onchange="app.${handler}(this)">
                 </label>`
             : '';
         if (!url) {
@@ -376,7 +428,7 @@ const ui = {
         const when = (d) => (d && d.uploaded_at) ? note('Uploaded ' + this.fmtDateTime(d.uploaded_at)) : '';
         const upBtn = (stop, done) => `<label class="btn ${done ? 'btn-secondary' : 'btn-primary'} btn-sm" style="cursor:pointer">
                 <i class="ri-upload-2-line"></i> ${done ? 'Replace DO' : 'Upload DO'}
-                <input type="file" accept="image/*,application/pdf" hidden data-job-id="${this.esc(job.id)}"${stop === null ? '' : ` data-stop="${stop}"`} ${done ? `onclick="if(!confirm('This will replace the DO already uploaded. Continue?')) event.preventDefault()"` : ''} onchange="app.uploadDO(this)">
+                <input type="file" accept="image/*,application/pdf" hidden data-job-id="${this.esc(job.id)}"${stop === null ? '' : ` data-stop="${stop}"`} ${done ? `onclick="return app.confirmReplace(event, this, 'This will replace the DO already uploaded. Continue?')"` : ''} onchange="app.uploadDO(this)">
             </label>`;
         const strip = (d, stop, name) => `<div class="photo-strip is-small" style="align-items:center;gap:12px;margin-top:8px">${d ? this.fileThumb(d.url, 'Delivery Order') + `<a class="btn btn-secondary btn-sm" href="${this.esc(this.downloadUrl(d.url, name))}" download><i class="ri-download-2-line"></i> Download</a>` : ''}${upBtn(stop, !!d)}</div>`;
         if (total === 1) {
@@ -1218,7 +1270,7 @@ const app = {
     },
 
     async restoreJob(jobId) {
-        if (!confirm("Are you sure you want to restore this job back to the active list?")) return;
+        if (!await ui.confirm("Are you sure you want to restore this job back to the active list?", { title: 'Restore job?', okText: 'Restore' })) return;
 
         // Automatically determine if it should go back to "assigned" or "open" based on its history
         // A job goes back to "assigned" if any sign of an award is left: assignment time, a DO,
@@ -1440,7 +1492,7 @@ const app = {
             }
         }
 
-        if (!confirm("Are you sure you want to accept this job for RM " + offeredPrice + "?")) return;
+        if (!await ui.confirm("Are you sure you want to accept this job for RM " + offeredPrice + "?", { title: 'Accept job', okText: 'Accept job' })) return;
 
         const newBid = {
             job_id: jobId,
@@ -1704,7 +1756,7 @@ const app = {
     },
 
     async awardJob(bidId, jobId, acceptedPrice) {
-        if (!confirm("Are you sure you want to award the job to this transporter?")) return;
+        if (!await ui.confirm("Are you sure you want to award the job to this transporter?", { title: 'Award job', okText: 'Award job' })) return;
 
         const { error: bidError } = await supabaseClient
             .from('bids')
@@ -1736,7 +1788,7 @@ const app = {
     },
 	
 	async deleteJob(jobId) {
-        if (!confirm("Are you sure you want to remove this job from your view? (It will be safely kept in the database).")) return;
+        if (!await ui.confirm("Are you sure you want to remove this job from your view? (It will be safely kept in the database).", { title: 'Remove job?', okText: 'Remove', tone: 'danger' })) return;
 
         const { error } = await supabaseClient
             .from('jobs')
@@ -1752,7 +1804,7 @@ const app = {
     },
 
     async unassignJob(jobId) {
-        if (!confirm("Are you sure you want to undo this assignment? The job will be returned to the open market.")) return;
+        if (!await ui.confirm("Are you sure you want to undo this assignment? The job will be returned to the open market.", { title: 'Undo assignment?', okText: 'Undo', tone: 'danger' })) return;
 
         // Remember who had the job (the bid is reset below) so the Transporters tab can count the cancellation
         const { data: heldBids } = await supabaseClient
@@ -1894,7 +1946,7 @@ const app = {
     async cancelCustomerJob(jobId) {
         const job = this.customerJobsById(jobId);
         const rejected = !!job && job.status === 'rejected';
-        if (!confirm(rejected ? "Delete this rejected order? This cannot be undone." : "Cancel this order? This cannot be undone.")) return;
+        if (!await ui.confirm(rejected ? "Delete this rejected order? This cannot be undone." : "Cancel this order? This cannot be undone.", { title: rejected ? 'Delete order?' : 'Cancel order?', okText: rejected ? 'Delete' : 'Cancel order', tone: 'danger' })) return;
         const { error } = await supabaseClient.rpc('cancel_customer_job', { p_job_id: jobId });
         if (error) {
             console.error(error);
@@ -2347,7 +2399,7 @@ const app = {
                 review: ui.pill('Order received', 'warn', 'ri-time-line'),
                 rejected: ui.pill('Rejected', 'stop', 'ri-close-circle-line'),
                 approved: ui.pill('Looking for driver', 'info', 'ri-megaphone-line'),
-                delivering: ui.pill('Driver assigned', 'info', 'ri-truck-line'),
+                delivering: ui.pill('Driver assigned', 'active', 'ri-truck-line'),
                 delivered: ui.pill('Delivered', 'go', 'ri-check-double-line')
             }[stage];
 
@@ -2501,7 +2553,7 @@ const app = {
             const id = ui.esc(job.id);
             const delivered = !!job.do_url;
             // Everything on the History page counts as completed
-            const pill = ui.pill('Completed', 'go', 'ri-check-double-line');
+            const pill = ui.pill('Completed', 'done', 'ri-check-double-line');
             // Same rule as the Orders list: only a delivered order can be booked again
             const again = delivered
                 ? `<button class="btn btn-secondary btn-sm" data-id="${id}" onclick="app.openCustomerCopy(this.dataset.id)"><i class="ri-repeat-line"></i> Book again</button>`
@@ -2808,7 +2860,7 @@ const app = {
 
         const note = (price !== Number(customerPrice))
             ? "\n(The customer expected RM " + ui.money(customerPrice) + ".)" : "";
-        if (!confirm("Post this job to transporters at RM " + ui.money(price) + "?" + note)) return;
+        if (!await ui.confirm("Post this job to transporters at RM " + ui.money(price) + "?" + note, { title: 'Post job', okText: 'Post job' })) return;
 
         const { data: updated, error } = await supabaseClient
             .from('jobs')
@@ -2837,6 +2889,17 @@ const app = {
     },
 
     // --- RENDER HTML FUNCTIONS ---
+    // A file input that already holds a file: ask first, then open the file picker.
+    // (The click is cancelled, the styled dialog is shown, and on "Replace" the input is clicked again.)
+    confirmReplace(ev, input, message) {
+        if (input.dataset.replaceOk) { delete input.dataset.replaceOk; return true; }
+        ev.preventDefault();
+        ui.confirm(message, { title: 'Replace file?', okText: 'Replace' }).then(ok => {
+            if (ok) { input.dataset.replaceOk = '1'; input.click(); }
+        });
+        return false;
+    },
+
     async uploadDO(input) {
         const file = input.files && input.files[0];
         const jobId = input.dataset.jobId;
@@ -2961,7 +3024,7 @@ const app = {
             return `
                 <article class="job-card is-dim${open ? '' : ' is-collapsed'}" data-job="${id}">
                     <div class="job-head">
-                        ${ui.pill('Completed', 'go', 'ri-check-double-line')}
+                        ${ui.pill('Completed', 'done', 'ri-check-double-line')}
                         <span class="job-time">${ui.posted(job.created_at)}</span>
                     </div>
                     ${this.adminSummary(job, finalDate)}
@@ -3016,7 +3079,7 @@ const app = {
             return `
                 <article class="job-card is-mine${open ? '' : ' is-collapsed'}" data-job="${id}">
                     <div class="job-head">
-                        <span style="display:inline-flex;gap:6px;flex-wrap:wrap">${ui.pill('Assigned to you', 'go', 'ri-truck-fill')}${doPill}</span>
+                        <span style="display:inline-flex;gap:6px;flex-wrap:wrap">${ui.pill('Assigned to you', 'active', 'ri-truck-fill')}${doPill}</span>
                         <span class="job-time">${ui.posted(job.created_at)}</span>
                     </div>
                     ${this.adminSummary(job, finalDate)}
@@ -3035,7 +3098,7 @@ const app = {
                         ${stopMode ? '' : `<div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
                         <label class="btn ${job.do_url ? 'btn-secondary' : 'btn-primary'} btn-sm" style="cursor:pointer">
                             <i class="ri-upload-2-line"></i> ${job.do_url ? 'Replace DO' : 'Upload DO'}
-                            <input type="file" accept="image/*,application/pdf" hidden data-job-id="${ui.esc(job.id)}" ${job.do_url ? `onclick="if(!confirm('This will replace the DO you already uploaded. Continue?')) event.preventDefault()"` : ''} onchange="app.uploadDO(this)">
+                            <input type="file" accept="image/*,application/pdf" hidden data-job-id="${ui.esc(job.id)}" ${job.do_url ? `onclick="return app.confirmReplace(event, this, 'This will replace the DO you already uploaded. Continue?')"` : ''} onchange="app.uploadDO(this)">
                         </label>
                         <span class="hint">Image or PDF, max 10 MB</span>
                         </div>`}
@@ -3112,7 +3175,7 @@ const app = {
         const msg = (job && !job.customer_po)
             ? 'There is no PO for this job.\nMark it as completed and move it to History anyway?'
             : 'Mark this job as completed and move it to History?';
-        if (!confirm(msg)) return;
+        if (!await ui.confirm(msg, { title: 'Complete job?', okText: 'Mark as complete' })) return;
         const { data, error } = await supabaseClient
             .from('jobs')
             .update({ status: 'completed' })
@@ -3270,7 +3333,7 @@ const app = {
             const id = ui.esc(job.id);
             const todo = ui.todoOf(job);
             const todoPill = todo === 'po' ? ui.pill('PO missing', 'warn', 'ri-file-warning-line')
-                : (todo === 'inv' ? ui.pill('INV to upload', 'info', 'ri-file-upload-line') : '');
+                : (todo === 'inv' ? ui.pill('INV to upload', 'warn', 'ri-file-upload-line') : '');
             const delivered = isAssigned && !!job.do_url;
             if (!(job.id in this.cardOpen)) this.cardOpen[job.id] = false;
             const open = this.cardOpen[job.id];
@@ -3377,7 +3440,7 @@ const app = {
             return `
                 <article class="job-card${banned ? ' is-dim' : ''}">
                     <div class="job-head">
-                        <span style="display:inline-flex;gap:6px;flex-wrap:wrap">${ui.pill('Open', 'go')}${mine.length ? ui.pill('Bid sent', 'info', 'ri-check-line') : ''}</span>
+                        <span style="display:inline-flex;gap:6px;flex-wrap:wrap">${ui.pill('Open', 'info', 'ri-megaphone-line')}${mine.length ? ui.pill('Bid sent', 'info', 'ri-check-line') : ''}</span>
                         <span class="job-time">${ui.posted(job.created_at)}</span>
                     </div>
                     ${ui.route(job, { contacts: false })}
