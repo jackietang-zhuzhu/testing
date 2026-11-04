@@ -320,35 +320,27 @@ input[type="file"]::file-selector-button {
     position: relative;
     display: flex; flex-direction: column; gap: 14px;
 }
-/* Every stop has a fixed 28px first row (the height of the map icon). The dot always sits
-   in the middle of that first row (14px from the top of the stop). The dashed line is drawn
-   per stop: it starts at this stop's dot and is exactly as long as "this stop's height + the gap",
-   so it always ends in the middle of the next dot, however tall a stop is (long name, contact line). */
+.route::before {
+    content: "";
+    position: absolute;
+    left: 8px; top: 16px; bottom: 16px;
+    border-left: 2px dashed var(--road);
+}
 .route-stop {
     position: relative;
     padding-left: 30px;
-    display: flex; align-items: flex-start; gap: 8px;
-    min-height: 28px;
+    display: flex; align-items: center; gap: 8px;
+    min-height: 24px;
 }
 .route-stop::before {
     content: "";
     position: absolute;
-    left: 1px; top: 6px;              /* 14px (middle of first row) - 8px (half the dot) */
+    left: 1px; top: 50%;
     width: 16px; height: 16px;
+    transform: translateY(-50%);
     border-radius: 50%;
     box-sizing: border-box;
-    z-index: 1;                       /* the dot covers the ends of the line */
 }
-.route-stop:not(:last-child)::after {
-    content: "";
-    position: absolute;
-    left: 8px; top: 14px;             /* from the middle of this dot ... */
-    height: calc(100% + 14px);        /* ... to the middle of the next dot (14px = gap of .route) */
-    border-left: 2px dashed var(--road);
-    z-index: 0;
-}
-.route-stop > .route-place { padding-top: 3.6px; }  /* (28px - 20.8px line) / 2: first line centred on the dot */
-.route-stop > .route-tag { margin-top: 3px; }
 .route-from::before { background: var(--surface); border: 3px solid var(--harbour); }
 .route-to::before { background: var(--harbour); border: 3px solid var(--road); }
 .route-via::before { background: var(--surface); border: 3px solid var(--road); }
@@ -664,6 +656,7 @@ input[type="file"]::file-selector-button {
 
 /* ---------- Person in charge + phone on a route stop ---------- */
 .route-stop.has-contact { flex-wrap: wrap; row-gap: 2px; }
+.route-stop.has-contact::before { top: 12px; }
 .route-contact {
     flex: 0 0 100%;
     display: flex; flex-wrap: wrap; gap: 2px 14px;
@@ -754,3 +747,53 @@ input[type="file"]::file-selector-button {
 
 /* Admin cards: the toggle sits right above the footer, so the footer does not need its own top line */
 .job-card > .card-more + .job-foot { border-top: 0; padding-top: 0; }
+
+
+/* ---------- Status colours (admin) ----------
+   blue = waiting on someone else, dark teal = on the road, yellow = admin to act,
+   light green = delivered, solid green = completed, grey = filed away */
+.pill-active { background: var(--harbour); color: #fff; }
+.pill-done { background: var(--go); color: #fff; }
+
+/* Six-step pipeline bar: pending review > open > assigned > delivered > pending inv > completed */
+.track { display: flex; gap: 3px; margin-top: -4px; }
+.track i { flex: 1; height: 4px; border-radius: 2px; background: var(--line); }
+.track i.is-done { background: var(--go); }
+.track i.is-now { background: var(--road); }
+.job-card.is-collapsed .track { margin-top: -2px; }
+
+/* ---------- Language switch: EN | BM ----------
+   #lang-btn stays the real button (lang.js keeps handling clicks and its own label);
+   it is stretched over the switch with invisible text so the whole pill is tappable. */
+.lang-seg {
+    position: relative;
+    display: inline-grid; grid-template-columns: 1fr 1fr;
+    height: 36px; min-width: 76px;
+    padding: 3px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, .28);
+    background: rgba(255, 255, 255, .06);
+    font-size: .75rem; font-weight: 700; letter-spacing: .02em;
+}
+.lang-seg > span {
+    display: grid; place-items: center;
+    border-radius: 999px;
+    color: rgba(255, 255, 255, .72);
+    transition: background-color .15s, color .15s;
+    pointer-events: none;
+}
+.lang-seg[data-current="en"] > span:first-child,
+.lang-seg[data-current="bm"] > span:nth-child(2) { background: var(--road); color: var(--harbour); }
+.lang-seg #lang-btn {
+    position: absolute; inset: 0;
+    width: 100%; min-height: 0; padding: 0;
+    border: 0; border-radius: 999px;
+    background: transparent;
+    font-size: 0; color: transparent;
+    cursor: pointer;
+}
+.lang-seg #lang-btn:hover:not(:disabled) { background: rgba(255, 255, 255, .08); }
+.lang-seg #lang-btn:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.header-actions { display: flex; align-items: center; gap: 8px; }
+
+@media (prefers-reduced-motion: reduce) { .lang-seg > span { transition: none; } }
