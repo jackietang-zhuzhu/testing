@@ -687,7 +687,7 @@ const app = {
         this.cardOpen = {};
         this.cardTouched = {};
         this.cardLoadedFor = null;
-        ['rt', 'hist', 'cust', 'board', 'mine'].forEach(p => ['search', 'from', 'to'].forEach(id => {
+        ['rt', 'hist'].forEach(p => ['search', 'from', 'to'].forEach(id => {
             const el = document.getElementById(p + '-' + id);
             if (el) el.value = '';
         }));
@@ -1292,9 +1292,6 @@ const app = {
 
     applyJobFilter(prefix) {
         if (prefix === 'hist') this.renderRTHistory(this.historyList || []);
-        else if (prefix === 'cust') this.renderCustomerJobs();
-        else if (prefix === 'board') this.renderTransporterJobs(this.boardJobs || []);
-        else if (prefix === 'mine') this.renderMyJobs(this.myJobsBids || []);
         else this.renderRTJobs(this.rtJobsList || []);
     },
 
@@ -2408,16 +2405,10 @@ const app = {
     renderCustomerJobs() {
         const container = document.getElementById('customer-jobs-container');
         this.loadCardPrefs();
-        const base = this.customerJobs || [];
-        const all = this.filterJobs(base, 'cust'); // delivery-date filter
-        this.updateFilterUi('cust', all.length, base.length);
+        const all = this.customerJobs || [];
 
-        if (base.length === 0) {
-            container.innerHTML = ui.empty('ri-file-list-3-line', 'No orders yet', 'Tap New order to place your first delivery order.');
-            return;
-        }
         if (all.length === 0) {
-            container.innerHTML = ui.empty('ri-search-line', 'No orders on these dates', 'Try a different date range.');
+            container.innerHTML = ui.empty('ri-file-list-3-line', 'No orders yet', 'Tap New order to place your first delivery order.');
             return;
         }
 
@@ -2438,7 +2429,7 @@ const app = {
             return;
         }
 
-        const cards = shown.map(job => {
+        const cardOf = (job) => {
             const stage = this.customerStage(job);
             const id = ui.esc(job.id);
             const pill = {
@@ -2506,7 +2497,20 @@ const app = {
                     </button>
                 </article>
             `;
-        }).join('');
+        };
+
+        // Group by delivery month, latest month first (same as the admin Jobs page)
+        const byMonth = new Map();
+        shown.forEach(j => {
+            const k = this.monthKey(j.delivery_date);
+            if (!byMonth.has(k)) byMonth.set(k, []);
+            byMonth.get(k).push(j);
+        });
+        const monthKeys = [...byMonth.keys()].sort((x, y) => x === '' ? 1 : (y === '' ? -1 : y.localeCompare(x)));
+        const cards = monthKeys.map(k =>
+            `<h3 class="month-head">${ui.esc(this.monthLabel(k))}</h3>` +
+            byMonth.get(k).map(cardOf).join('')
+        ).join('');
 
         const toolbar = `<div class="list-bar">${chips}<button type="button" class="link-btn list-toggle-all" id="cust-toggle-all" onclick="app.toggleAllCards()"></button></div>`;
         container.innerHTML = toolbar + cards;
@@ -3095,17 +3099,10 @@ const app = {
         this.myJobsBids = allBids;
         const container = document.getElementById('my-jobs-container');
         if (allBids.length === 0) {
-            this.updateFilterUi('mine', 0, 0);
             container.innerHTML = ui.empty('ri-truck-line', 'No assigned jobs yet', 'Jobs awarded to your company will show up here.');
             return;
         }
-        const f = this.getJobFilter('mine');
-        const bids = allBids.filter(b => b.jobs && this.dateInRange(f, b.proposed_date || b.jobs.delivery_date));
-        this.updateFilterUi('mine', bids.length, allBids.length);
-        if (bids.length === 0) {
-            container.innerHTML = ui.empty('ri-search-line', 'No jobs on these dates', 'Try a different date range.');
-            return;
-        }
+        const bids = allBids.filter(b => b.jobs);
 
         container.innerHTML = bids.map(bid => {
             const job = bid.jobs;
@@ -3161,6 +3158,8 @@ const app = {
     // Status flow (kept up to date by the database, whoever uploads a document and whether or not anyone has the app open):
     //   assigned -> delivered (every DO in) -> pending_inv (customer PO in, our INV not yet) -> archived (accepted price, PO, DO and INV all in: History)
     // The admin can also complete a job by hand (for example a verbal booking that never gets a PO).
+    // Customer actions by status: pending_review -> Edit (stays pending_review) or Cancel order (job is deleted);
+    // rejected -> Edit & resubmit (back to pending_review) or Delete; open / assigned -> none; delivered and later -> upload PO, rate, Book again.
     // A completed job stays in the active list until the admin moves it to History ('archived').
     // ==========================================
     adminDocs(job) {
@@ -3434,8 +3433,7 @@ const app = {
     renderTransporterJobs(allJobs) {
         allJobs = allJobs || [];
         this.boardJobs = allJobs;
-        const jobs = this.filterJobs(allJobs, 'board'); // delivery-date filter
-        this.updateFilterUi('board', jobs.length, allJobs.length);
+        const jobs = allJobs;
         const banned = this.isBanned();
         let bannerHtml = '';
 
@@ -3454,10 +3452,8 @@ const app = {
         }
 
         if (jobs.length === 0) {
-            const filtered = allJobs.length > 0;
-            transporterJobsContainer.innerHTML = bannerHtml + (filtered
-                ? ui.empty('ri-search-line', 'No jobs on these dates', 'Try a different date range.')
-                : ui.empty('ri-truck-line', 'No open jobs right now', 'New loads appear here as soon as they are posted.'));
+            transporterJobsContainer.innerHTML = bannerHtml
+                + ui.empty('ri-truck-line', 'No open jobs right now', 'New loads appear here as soon as they are posted.');
             return;
         }
 
