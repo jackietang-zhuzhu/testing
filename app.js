@@ -687,7 +687,7 @@ const app = {
         this.cardOpen = {};
         this.cardTouched = {};
         this.cardLoadedFor = null;
-        ['rt', 'hist'].forEach(p => ['search', 'from', 'to'].forEach(id => {
+        ['rt', 'hist', 'cust', 'board', 'mine'].forEach(p => ['search', 'from', 'to'].forEach(id => {
             const el = document.getElementById(p + '-' + id);
             if (el) el.value = '';
         }));
@@ -1292,6 +1292,9 @@ const app = {
 
     applyJobFilter(prefix) {
         if (prefix === 'hist') this.renderRTHistory(this.historyList || []);
+        else if (prefix === 'cust') this.renderCustomerJobs();
+        else if (prefix === 'board') this.renderTransporterJobs(this.boardJobs || []);
+        else if (prefix === 'mine') this.renderMyJobs(this.myJobsBids || []);
         else this.renderRTJobs(this.rtJobsList || []);
     },
 
@@ -1371,7 +1374,7 @@ const app = {
 
     async fetchJobsForTransporter(silent = false) {
         if (!silent) transporterJobsContainer.innerHTML = ui.skeleton(3);
-        const { data: jobs, error } = await supabaseClient.from('jobs').select('*').eq('status', 'open').order('created_at', { ascending: false });
+        const { data: jobs, error } = await supabaseClient.from('transporter_jobs').select('*').eq('relation', 'open').order('created_at', { ascending: false });
         if (error) { console.error(error); if (!silent) transporterJobsContainer.innerHTML = ui.errorBlock('Check your connection and try again.'); return; }
         if (silent && !this.viewIs('transporterHome')) return;
 
@@ -2405,10 +2408,16 @@ const app = {
     renderCustomerJobs() {
         const container = document.getElementById('customer-jobs-container');
         this.loadCardPrefs();
-        const all = this.customerJobs || [];
+        const base = this.customerJobs || [];
+        const all = this.filterJobs(base, 'cust'); // delivery-date filter
+        this.updateFilterUi('cust', all.length, base.length);
 
-        if (all.length === 0) {
+        if (base.length === 0) {
             container.innerHTML = ui.empty('ri-file-list-3-line', 'No orders yet', 'Tap New order to place your first delivery order.');
+            return;
+        }
+        if (all.length === 0) {
+            container.innerHTML = ui.empty('ri-search-line', 'No orders on these dates', 'Try a different date range.');
             return;
         }
 
@@ -2429,7 +2438,7 @@ const app = {
             return;
         }
 
-        const cardOf = (job) => {
+        const cards = shown.map(job => {
             const stage = this.customerStage(job);
             const id = ui.esc(job.id);
             const pill = {
@@ -2497,20 +2506,7 @@ const app = {
                     </button>
                 </article>
             `;
-        };
-
-        // Group by delivery month, latest month first (same as the admin Jobs page)
-        const byMonth = new Map();
-        shown.forEach(j => {
-            const k = this.monthKey(j.delivery_date);
-            if (!byMonth.has(k)) byMonth.set(k, []);
-            byMonth.get(k).push(j);
-        });
-        const monthKeys = [...byMonth.keys()].sort((x, y) => x === '' ? 1 : (y === '' ? -1 : y.localeCompare(x)));
-        const cards = monthKeys.map(k =>
-            `<h3 class="month-head">${ui.esc(this.monthLabel(k))}</h3>` +
-            byMonth.get(k).map(cardOf).join('')
-        ).join('');
+        }).join('');
 
         const toolbar = `<div class="list-bar">${chips}<button type="button" class="link-btn list-toggle-all" id="cust-toggle-all" onclick="app.toggleAllCards()"></button></div>`;
         container.innerHTML = toolbar + cards;
@@ -3016,12 +3012,23 @@ const app = {
         const container = document.getElementById('my-jobs-container');
         if (!silent) container.innerHTML = ui.skeleton(2);
 
-        const { data: bids, error } = await supabaseClient
-            .from('bids')
-            .select('*, jobs(*)')
-            .eq('transporter_id', this.currentUser.id)
-            .eq('status', 'accepted')
-            .order('created_at', { ascending: false });
+        // Own accepted bids, then the jobs won (transporter_jobs returns full details only for jobs this transporter won)
+        const [bidsRes, jobsRes] = await Promise.all([
+            supabaseClient
+                .from('bids')
+                .select('*')
+                .eq('transporter_id', this.currentUser.id)
+                .eq('status', 'accepted')
+                .order('created_at', { ascending: false }),
+            supabaseClient
+                .from('transporter_jobs')
+                .select('*')
+                .eq('relation', 'mine')
+        ]);
+        const error = bidsRes.error || jobsRes.error;
+        const jobsById = {};
+        (jobsRes.data || []).forEach(j => { jobsById[j.id] = j; });
+        const bids = (bidsRes.data || []).map(b => ({ ...b, jobs: jobsById[b.job_id] || null }));
 
         if (error) {
             console.error(error);
@@ -3099,10 +3106,17 @@ const app = {
         this.myJobsBids = allBids;
         const container = document.getElementById('my-jobs-container');
         if (allBids.length === 0) {
+            this.updateFilterUi('mine', 0, 0);
             container.innerHTML = ui.empty('ri-truck-line', 'No assigned jobs yet', 'Jobs awarded to your company will show up here.');
             return;
         }
-        const bids = allBids.filter(b => b.jobs);
+        const f = this.getJobFilter('mine');
+        const bids = allBids.filter(b => b.jobs && this.dateInRange(f, b.proposed_date || b.jobs.delivery_date));
+        this.updateFilterUi('mine', bids.length, allBids.length);
+        if (bids.length === 0) {
+            container.innerHTML = ui.empty('ri-search-line', 'No jobs on these dates', 'Try a different date range.');
+            return;
+        }
 
         container.innerHTML = bids.map(bid => {
             const job = bid.jobs;
@@ -3117,7 +3131,7 @@ const app = {
             const doTotal = ui.stops(job).length + 1;
             const doHave = ui.dosOf(job).length;
             const doMissing = !job.do_url;
-            const doPill = !doMissing ? '' : ui.pill(doHave ? `DO ${doHave}/${doTotal} uploaded` : 'DO not uploaded', 'warn', 'ri-file-warning-line');
+            const doPill = !doMissing ? '' : ui.pill(doHave ? `Pending DO ${doHave}/${doTotal}` : 'Pending DO', 'warn', 'ri-file-warning-line');
             const doNotice = !doMissing ? '' : `<div class="notice notice-warn"><i class="ri-upload-2-line"></i><span>${doHave ? `Still need to upload the DO for ${doTotal - doHave} drop-off${doTotal - doHave === 1 ? '' : 's'}.` : 'Please upload the DO once the delivery is done.'}</span></div>`;
 
             return `
@@ -3158,8 +3172,6 @@ const app = {
     // Status flow (kept up to date by the database, whoever uploads a document and whether or not anyone has the app open):
     //   assigned -> delivered (every DO in) -> pending_inv (customer PO in, our INV not yet) -> archived (accepted price, PO, DO and INV all in: History)
     // The admin can also complete a job by hand (for example a verbal booking that never gets a PO).
-    // Customer actions by status: pending_review -> Edit (stays pending_review) or Cancel order (job is deleted);
-    // rejected -> Edit & resubmit (back to pending_review) or Delete; open / assigned -> none; delivered and later -> upload PO, rate, Book again.
     // A completed job stays in the active list until the admin moves it to History ('archived').
     // ==========================================
     adminDocs(job) {
@@ -3176,7 +3188,7 @@ const app = {
             case 'pending_review': return ui.pill('Awaiting review', 'warn', 'ri-time-line');
             case 'assigned': return ui.pill('Assigned', 'active', 'ri-truck-line');
             case 'delivered': return ui.pill('Delivered', 'go', 'ri-check-line');
-            case 'pending_inv': return ui.pill('Pending invoice', 'warn', 'ri-file-upload-line');
+            case 'pending_inv': return ui.pill('Pending INV', 'warn', 'ri-file-upload-line');
             case 'completed': return ui.pill('Completed', 'done', 'ri-check-double-line');
             case 'archived': return ui.pill('Completed', 'neutral', 'ri-archive-line');
             default: return ui.pill('Open for bids', 'info', 'ri-megaphone-line');
@@ -3364,7 +3376,7 @@ const app = {
         };
         const active = (this.rtTodo && counts[this.rtTodo] !== undefined) ? this.rtTodo : 'all';
         const todoChips = (counts.po + counts.inv > 0 || active !== 'all')
-            ? `<div class="chips">${[['all', 'All'], ['po', 'Waiting for PO'], ['inv', 'INV to upload']]
+            ? `<div class="chips">${[['all', 'All'], ['po', 'Pending PO'], ['inv', 'Pending INV']]
                 .filter(([key]) => key === 'all' || key === active || counts[key] > 0)
                 .map(([key, label]) => `<button type="button" class="chip${key === active ? ' is-active' : ''}" onclick="app.setRtTodo('${key}')">${label} <span class="chip-count">${counts[key]}</span></button>`)
                 .join('')}</div>`
@@ -3379,8 +3391,8 @@ const app = {
             const isAssigned = ui.awarded(job);
             const id = ui.esc(job.id);
             const todo = ui.todoOf(job);
-            const todoPill = todo === 'po' ? ui.pill('PO missing', 'warn', 'ri-file-warning-line')
-                : (todo === 'inv' ? ui.pill('INV to upload', 'warn', 'ri-file-upload-line') : '');
+            const todoPill = todo === 'po' ? ui.pill('Pending PO', 'warn', 'ri-file-warning-line')
+                : (todo === 'inv' ? ui.pill('Pending INV', 'warn', 'ri-file-upload-line') : '');
             const delivered = isAssigned && !!job.do_url;
             if (!(job.id in this.cardOpen)) this.cardOpen[job.id] = false;
             const open = this.cardOpen[job.id];
@@ -3433,7 +3445,8 @@ const app = {
     renderTransporterJobs(allJobs) {
         allJobs = allJobs || [];
         this.boardJobs = allJobs;
-        const jobs = allJobs;
+        const jobs = this.filterJobs(allJobs, 'board'); // delivery-date filter
+        this.updateFilterUi('board', jobs.length, allJobs.length);
         const banned = this.isBanned();
         let bannerHtml = '';
 
@@ -3452,8 +3465,10 @@ const app = {
         }
 
         if (jobs.length === 0) {
-            transporterJobsContainer.innerHTML = bannerHtml
-                + ui.empty('ri-truck-line', 'No open jobs right now', 'New loads appear here as soon as they are posted.');
+            const filtered = allJobs.length > 0;
+            transporterJobsContainer.innerHTML = bannerHtml + (filtered
+                ? ui.empty('ri-search-line', 'No jobs on these dates', 'Try a different date range.')
+                : ui.empty('ri-truck-line', 'No open jobs right now', 'New loads appear here as soon as they are posted.'));
             return;
         }
 
@@ -3510,9 +3525,9 @@ const app = {
         if (!silent) container.innerHTML = ui.skeleton(2, 64);
         
         const { data: jobs, error } = await supabaseClient
-            .from('jobs')
+            .from('transporter_jobs')
             .select('*')
-            .eq('status', 'completed') // only finished jobs: archived ones are sometimes deleted by mistake, so they never count
+            .eq('is_recent', true) // the view only flags the 5 latest completed jobs: archived ones are sometimes deleted by mistake, so they never count
             .order('completed_at', { ascending: false, nullsFirst: false })
             .order('created_at', { ascending: false })
             .limit(5);
