@@ -670,6 +670,18 @@
         </div>
     </div>
 
+    <!-- GENERIC CONFIRM DIALOG (replaces the browser's own confirm() box; filled in by ui.confirm) -->
+    <div id="dialog-modal" class="modal modal-top hidden" role="alertdialog" aria-modal="true" aria-labelledby="dialog-title" aria-describedby="dialog-text">
+        <div class="modal-card dialog-card">
+            <h2 class="page-title" id="dialog-title"></h2>
+            <div class="dialog-text" id="dialog-text"></div>
+            <div class="actions-wide">
+                <button type="button" id="dialog-cancel" class="btn btn-secondary">Go back</button>
+                <button type="button" id="dialog-ok" class="btn btn-go">Confirm</button>
+            </div>
+        </div>
+    </div>
+
     <div id="toast-region" class="toast-region" role="status" aria-live="polite"></div>
 
     <script src="lang.js"></script>
