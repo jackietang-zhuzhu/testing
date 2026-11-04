@@ -3074,14 +3074,6 @@ const app = {
         }
     },
 
-    // Admin: thin 6-step bar under the status pill (decorative; the pill already names the status)
-    statusTrack(job) {
-        const order = ['pending_review', 'open', 'assigned', 'delivered', 'pending_inv', 'completed'];
-        const idx = job.status === 'archived' ? order.length - 1 : Math.max(0, order.indexOf(job.status));
-        return `<div class="track" aria-hidden="true">${order.map((_, i) =>
-            `<i class="${i < idx ? 'is-done' : (i === idx ? 'is-now' : '')}"></i>`).join('')}</div>`;
-    },
-
     // Admin: Upload / Replace PO on behalf of the customer
     async adminUploadPO(input) {
         const file = input.files && input.files[0];
@@ -3289,7 +3281,6 @@ const app = {
                         <span style="display:inline-flex;gap:6px;flex-wrap:wrap">${this.statusPill(job)}${todoPill}</span>
                         <span class="job-time">${ui.posted(job.created_at)}</span>
                     </div>
-                    ${this.statusTrack(job)}
                     ${this.adminSummary(job)}
                     <div class="job-body" id="jb-${id}">
                         ${ui.customerLine(job)}
