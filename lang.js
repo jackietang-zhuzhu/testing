@@ -27,6 +27,7 @@
         "Password": "Kata laluan",
         "Forgot password?": "Lupa kata laluan?",
         "Log in": "Log masuk",
+        "Logging in...": "Sedang log masuk...",
         "New transporter?": "Pengangkut baharu?",
         "Register as transporter": "Daftar sebagai pengangkut",
         "Want to place a delivery order?": "Ingin membuat pesanan penghantaran?",
