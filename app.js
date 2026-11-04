@@ -115,7 +115,7 @@ const ui = {
 
     // ----- building blocks -----
     pill(text, tone = 'neutral', icon = '') {
-        const t = ['go', 'info', 'warn', 'stop', 'neutral'].includes(tone) ? tone : 'neutral';
+        const t = ['go', 'info', 'warn', 'stop', 'neutral', 'active', 'done'].includes(tone) ? tone : 'neutral';
         return `<span class="pill pill-${t}">${icon ? `<i class="${icon}"></i>` : ''}${this.esc(text)}</span>`;
     },
     mapLink(url, label) {
@@ -1122,7 +1122,7 @@ const app = {
             return `
                 <article class="job-card${open ? '' : ' is-collapsed'}" data-job="${id}">
                     <div class="job-head">
-                        ${ui.pill('Completed', 'go', 'ri-check-double-line')}
+                        ${ui.pill('Completed', 'done', 'ri-check-double-line')}
                         <span class="job-time">${ui.posted(job.created_at)}</span>
                     </div>
                     ${this.adminSummary(job)}
@@ -3059,15 +3059,27 @@ const app = {
             + ui.invSlip(job, { download: true, upload: true });
     },
 
-    // Admin: the status pill on a job card
+    // Admin: the status pill on a job card.
+    // Colour meaning: blue = waiting on someone else, dark teal = on the road,
+    // yellow = the admin has something to do, green = finished well, grey = filed away.
     statusPill(job) {
         switch (job.status) {
-            case 'assigned': return ui.pill('Assigned', 'go', 'ri-check-line');
-            case 'delivered': return ui.pill('Delivered', 'go', 'ri-check-double-line');
-            case 'pending_inv': return ui.pill('Pending invoice', 'info', 'ri-file-upload-line');
-            case 'completed': return ui.pill('Completed', 'go', 'ri-checkbox-circle-line');
-            default: return ui.pill('Open for bids', 'info');
+            case 'pending_review': return ui.pill('Awaiting review', 'warn', 'ri-time-line');
+            case 'assigned': return ui.pill('Assigned', 'active', 'ri-truck-line');
+            case 'delivered': return ui.pill('Delivered', 'go', 'ri-check-line');
+            case 'pending_inv': return ui.pill('Pending invoice', 'warn', 'ri-file-upload-line');
+            case 'completed': return ui.pill('Completed', 'done', 'ri-check-double-line');
+            case 'archived': return ui.pill('Completed', 'neutral', 'ri-archive-line');
+            default: return ui.pill('Open for bids', 'info', 'ri-megaphone-line');
         }
+    },
+
+    // Admin: thin 6-step bar under the status pill (decorative; the pill already names the status)
+    statusTrack(job) {
+        const order = ['pending_review', 'open', 'assigned', 'delivered', 'pending_inv', 'completed'];
+        const idx = job.status === 'archived' ? order.length - 1 : Math.max(0, order.indexOf(job.status));
+        return `<div class="track" aria-hidden="true">${order.map((_, i) =>
+            `<i class="${i < idx ? 'is-done' : (i === idx ? 'is-now' : '')}"></i>`).join('')}</div>`;
     },
 
     // Admin: Upload / Replace PO on behalf of the customer
@@ -3277,6 +3289,7 @@ const app = {
                         <span style="display:inline-flex;gap:6px;flex-wrap:wrap">${this.statusPill(job)}${todoPill}</span>
                         <span class="job-time">${ui.posted(job.created_at)}</span>
                     </div>
+                    ${this.statusTrack(job)}
                     ${this.adminSummary(job)}
                     <div class="job-body" id="jb-${id}">
                         ${ui.customerLine(job)}
