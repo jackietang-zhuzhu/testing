@@ -796,10 +796,15 @@ input[type="file"]::file-selector-button {
 
 
 /* ---------- Dialogs and toasts share one colour language ----------
-   green = done / go ahead, red = destructive or error, blue = neutral information */
+   green = done / go ahead, red = destructive or error, light yellow = in progress / information */
 .modal-top { z-index: 70; } /* above the order check dialog */
 .dialog-card { max-width: 420px; }
 .dialog-text { margin-top: 10px; color: var(--ink-2); font-size: .9375rem; line-height: 1.5; }
 .dialog-text p + p { margin-top: 8px; }
 .dialog-card .actions-wide { margin-top: 20px; }
-.toast-info { background: var(--info); box-shadow: 0 10px 30px -8px rgba(23, 69, 99, .55); }
+.toast-info {
+    background: var(--road-soft); color: var(--road-ink);
+    border: 1px solid #e8cf83;
+    box-shadow: 0 10px 30px -8px rgba(90, 65, 0, .35);
+}
+.toast-info i { color: var(--road-ink); }
