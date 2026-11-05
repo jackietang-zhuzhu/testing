@@ -537,7 +537,6 @@ const ui = {
     },
     // Customer: the box on a delivered order. Tap a star and it is saved straight away; tap another star to change it.
     ratingBox(job) {
-        if (app.noRatings) return ''; // the rating columns are not set up in Supabase yet: show nothing rather than a broken box
         const id = this.esc(job.id);
         const picked = job.customer_rating ? job.customer_rating.rating : 0;
         const busy = app.ratingBusy === String(job.id);
@@ -600,7 +599,6 @@ const app = {
     myHistoryBids: [],
     tpData: null,            // Transporters tab: loaded bids, transporters, cancellations and ratings
     ratingBusy: null,        // customer: id of the order whose rating is being saved (blocks a second tap meanwhile)
-    noRatings: false,        // set when the rating columns are not in job_docs yet (the rating box is then hidden)
     tpMonth: '',             // Transporters tab: chosen month ('' = not chosen yet, 'all' = all time)
     cardOpen: {},            // customer Orders list: job id -> true (expanded) / false (collapsed). Survives auto-refresh.
     cardTouched: {},         // job ids the customer opened/closed themselves: only these are saved on the device
@@ -1351,15 +1349,11 @@ const app = {
         // Automatically determine if it should go back to "assigned" or "open" based on its history
         // A job goes back to "assigned" if any sign of an award is left: assignment time, a DO,
         // an accepted bid, or a PO / invoice. Only a job with none of these goes back to "open".
-        const { data: job } = await supabaseClient.from('jobs').select('assigned_at, stops, dos').eq('id', jobId).single();
-        let awarded = !!(job && (job.assigned_at || ui.parseDos(job).length));
+        const { data: job } = await supabaseClient.from('jobs').select('assigned_at, stops, dos, po_url, invoice_url').eq('id', jobId).single();
+        let awarded = !!(job && (job.assigned_at || ui.parseDos(job).length || job.po_url || job.invoice_url));
         if (!awarded) {
-            const [bidRes, docRes] = await Promise.all([
-                supabaseClient.from('bids').select('id').eq('job_id', jobId).eq('status', 'accepted').limit(1),
-                supabaseClient.from('job_docs').select('po_url, invoice_url').eq('job_id', jobId).limit(1)
-            ]);
-            const doc = docRes.data && docRes.data[0];
-            awarded = !!((bidRes.data && bidRes.data.length) || (doc && (doc.po_url || doc.invoice_url)));
+            const bidRes = await supabaseClient.from('bids').select('id').eq('job_id', jobId).eq('status', 'accepted').limit(1);
+            awarded = !!(bidRes.data && bidRes.data.length);
         }
         // A job that already has its DO goes back as 'delivered' and is put on hold (hold_completion):
         // the database will not auto-complete it again, so it stays in Active jobs until the admin presses Mark as complete.
@@ -2202,7 +2196,7 @@ const app = {
 
     // submit_customer_job may return the new job's id (as text, or inside a row), or nothing at all
     // ---- Customer PO and our invoice (INV) ----
-    // Both are files kept apart from the job (table job_docs) so transporters never get them.
+    // Both are columns of the jobs row (po_url, invoice_url). Transporters never get them (the transporter_jobs view leaves them out).
     // The customer uploads the PO once the job is delivered; we then upload the INV, which the customer can download.
     checkDocFile(file, noun) {
         const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
@@ -2280,42 +2274,17 @@ const app = {
         else this.fetchJobsForRT();
     },
 
-    // Adds job.customer_po and job.invoice_file ({ url, uploaded_at } or null) to each job, from the job_docs table
-    // (one row per job). These are extras: if they cannot be loaded the jobs still show. Row-level security decides
-    // what comes back: a customer only gets their own, the admin gets all, transporters get none.
+    // Adds job.customer_po, job.invoice_file ({ url, uploaded_at } or null) and job.customer_rating to each job.
+    // PO, INV and the rating are columns of the jobs row itself (po_url, invoice_url, rating, ...), so nothing is loaded here:
+    // this only reshapes what the job row already carries. Row-level security / the customer_jobs view decide what each role gets
+    // (a customer only gets their own, the admin gets all, transporters get none).
     async attachJobDocs(jobs) {
         if (!jobs || !jobs.length) return jobs;
-        const docCols = 'job_id, po_url, po_uploaded_at, invoice_url, invoice_uploaded_at';
-        const load = (cols) => {
-            let query = supabaseClient.from('job_docs').select(cols);
-            if (jobs.length === 1) query = query.eq('job_id', jobs[0].id);
-            return query;
-        };
-        let { data, error } = await load(this.noRatings ? docCols : docCols + ', rating, rated_at');
-        if (error && !this.noRatings && /rating|rated_at/i.test(error.message || '')) {
-            // the rating columns are not added in Supabase yet: carry on without ratings (and hide the rating box)
-            this.noRatings = true;
-            ({ data, error } = await load(docCols));
-        }
-        if (error) {
-            // No job_docs table: PO / INV / rating are columns of the job row itself (jobs.po_url, jobs.invoice_url, jobs.rating ...)
-            console.error('Documents load error:', error);
-            const pick = (url, at) => url ? { url, uploaded_at: at } : null;
-            jobs.forEach(x => {
-                x.customer_po = pick(x.po_url, x.po_uploaded_at);
-                x.invoice_file = pick(x.invoice_url, x.invoice_uploaded_at);
-                x.customer_rating = x.rating ? { rating: Number(x.rating), created_at: x.rated_at } : null;
-            });
-            return jobs;
-        }
-        const byJob = new Map((data || []).map(r => [String(r.job_id), r]));
-        const pack = (url, at) => url ? { url, uploaded_at: at } : null;
+        const pick = (url, at) => url ? { url, uploaded_at: at } : null;
         jobs.forEach(x => {
-            const r = byJob.get(String(x.id));
-            x.customer_po = r ? pack(r.po_url, r.po_uploaded_at) : null;
-            x.invoice_file = r ? pack(r.invoice_url, r.invoice_uploaded_at) : null;
-            // the customer's star rating of the transporter (customers get their own, the admin gets all)
-            x.customer_rating = (r && r.rating) ? { rating: Number(r.rating), created_at: r.rated_at } : null;
+            x.customer_po = pick(x.po_url, x.po_uploaded_at);
+            x.invoice_file = pick(x.invoice_url, x.invoice_uploaded_at);
+            x.customer_rating = x.rating ? { rating: Number(x.rating), created_at: x.rated_at } : null;
         });
         return jobs;
     },
@@ -3619,11 +3588,11 @@ const app = {
         const container = document.getElementById('rt-transporters-container');
         if (!silent) container.innerHTML = ui.skeleton(3, 220);
 
-        const [bidsRes, tpRes, cancelRes, ratingsRes] = await Promise.all([
+        const [bidsRes, tpRes, cancelRes, jobRatingsRes] = await Promise.all([
             this.fetchAllRows(() => supabaseClient.from('bids').select('*, jobs(*)').order('created_at', { ascending: false })),
             supabaseClient.from('transporters').select('id, company_name, contact_person, phone, banned_until, last_active_at'),
             supabaseClient.from('job_cancellations').select('job_id, transporter_id, delivery_date, cancelled_at'),
-            this.fetchAllRows(() => supabaseClient.from('job_docs').select('job_id, rating, rated_at, rated_transporter_id').not('rating', 'is', null).order('job_id'))
+            this.fetchAllRows(() => supabaseClient.from('jobs').select('id, rating, rated_at').not('rating', 'is', null).order('id'))
         ]);
 
         if (bidsRes.error) {
@@ -3633,7 +3602,18 @@ const app = {
         }
         if (tpRes.error) console.error('Could not load transporters:', tpRes.error);
         if (cancelRes.error) console.warn('Cancellations not available:', cancelRes.error.message);
-        if (ratingsRes.error) console.warn('Ratings not available:', ratingsRes.error.message);
+        // Ratings live on the jobs row (jobs.rating / jobs.rated_at). The rated transporter is the one whose bid was accepted for that job.
+        let ratings = [];
+        const ratingsOk = !jobRatingsRes.error;
+        if (jobRatingsRes.error) {
+            console.warn('Ratings not available:', jobRatingsRes.error.message);
+        } else {
+            const holder = new Map();
+            (bidsRes.data || []).forEach(b => { if (b.status === 'accepted') holder.set(String(b.job_id), b.transporter_id); });
+            ratings = (jobRatingsRes.data || [])
+                .filter(r => holder.has(String(r.id)))
+                .map(r => ({ job_id: r.id, transporter_id: holder.get(String(r.id)), rating: r.rating, created_at: r.rated_at }));
+        }
 
         if (silent && !this.viewIs('rtTransporters')) return;
         const data = {
@@ -3641,8 +3621,8 @@ const app = {
             transporters: tpRes.data || [],
             cancels: cancelRes.error ? [] : (cancelRes.data || []),
             cancelOk: !cancelRes.error,
-            ratings: ratingsRes.error ? [] : (ratingsRes.data || []).map(r => ({ job_id: r.job_id, transporter_id: r.rated_transporter_id, rating: r.rating, created_at: r.rated_at })),
-            ratingsOk: !ratingsRes.error
+            ratings,
+            ratingsOk
         };
         const sig = JSON.stringify(data);
         if (silent && sig === this.lastSig.transporters) return;
