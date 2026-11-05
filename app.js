@@ -1351,10 +1351,19 @@ const app = {
         // Automatically determine if it should go back to "assigned" or "open" based on its history
         // A job goes back to "assigned" if any sign of an award is left: assignment time, a DO,
         // an accepted bid, or a PO / invoice. Only a job with none of these goes back to "open".
-        const { data: job } = await supabaseClient.from('jobs').select('assigned_at, stops, dos, po_url, invoice_url').eq('id', jobId).single();
+        const { data: job, error: jobErr } = await supabaseClient.from('jobs').select('assigned_at, stops, dos, po_url, invoice_url').eq('id', jobId).single();
+        // If the job cannot be read (network, permission), stop here: guessing "not awarded" would send an assigned job back to open
+        if (jobErr || !job) {
+            ui.notify("Could not restore the job: " + ((jobErr && jobErr.message) || 'job not found'));
+            return;
+        }
         let awarded = !!(job && (job.assigned_at || ui.parseDos(job).length || job.po_url || job.invoice_url));
         if (!awarded) {
             const bidRes = await supabaseClient.from('bids').select('id').eq('job_id', jobId).eq('status', 'accepted').limit(1);
+            if (bidRes.error) {
+                ui.notify("Could not restore the job: " + bidRes.error.message);
+                return;
+            }
             awarded = !!(bidRes.data && bidRes.data.length);
         }
         // A job that already has its DO goes back as 'delivered' and is put on hold (hold_completion):
