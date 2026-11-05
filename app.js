@@ -408,7 +408,8 @@ const ui = {
     // Exactly one state, first match wins:
     //   completed     the admin marked it complete
     //   pending_do    a DO is still missing (for several drop-offs: any drop-off without its DO)
-    //   pending_po    DO is in, the customer's PO is not (only jobs that came from a customer have a PO)
+    //   pending_po_inv  DO is in, but both the customer's PO and our invoice are still missing (shown as "Pending PO & INV")
+    //   pending_po    DO and INV are in, the customer's PO is not (only jobs that came from a customer have a PO)
     //   pending_inv   DO (and PO) are in, our invoice is not
     //   ready         DO, PO and INV are all in: waiting for Mark as complete (or the database finishes it)
     // Returns null for a job that is not awarded yet (those use the open / review pills).
@@ -416,14 +417,18 @@ const ui = {
         if (!this.awarded(job)) return null;
         if (job.status === 'completed') return { key: 'completed', label: 'Completed', tone: 'done', icon: 'ri-check-double-line' };
         if (!this.hasAllDos(job)) return { key: 'pending_do', label: 'Pending DO', tone: 'info', icon: 'ri-file-warning-line' };
-        if (job.customers && !job.customer_po) return { key: 'pending_po', label: 'Pending PO', tone: 'warn', icon: 'ri-file-warning-line' };
+        if (job.customers && !job.customer_po) {
+            if (!job.invoice_file) return { key: 'pending_po_inv', label: 'Pending PO & INV', tone: 'warn', icon: 'ri-file-warning-line' };
+            return { key: 'pending_po', label: 'Pending PO', tone: 'warn', icon: 'ri-file-warning-line' };
+        }
         if (!job.invoice_file) return { key: 'pending_inv', label: 'Pending INV', tone: 'warn', icon: 'ri-file-upload-line' };
         return { key: 'ready', label: 'Ready to complete', tone: 'go', icon: 'ri-check-line' };
     },
-    // Filter-chip key for the admin Jobs list: 'do' | 'po' | 'inv', or '' when nothing is pending
+    // Filter-chip keys for the admin Jobs list: a list of 'do' | 'po' | 'inv' (empty when nothing is pending).
+    // A job that waits on both PO and INV belongs to both chips.
     todoOf(job) {
         const st = this.docState(job);
-        return st ? ({ pending_do: 'do', pending_po: 'po', pending_inv: 'inv' }[st.key] || '') : '';
+        return st ? ({ pending_do: ['do'], pending_po: ['po'], pending_inv: ['inv'], pending_po_inv: ['po', 'inv'] }[st.key] || []) : [];
     },
     // A document attached to a job but stored apart from it, so transporters never receive it:
     //   job.customer_po   = { url, uploaded_at }  the customer's own PO (uploaded after delivery)
@@ -2454,6 +2459,10 @@ const app = {
                 delivered: ui.pill('Delivered', 'go', 'ri-check-double-line')
             }[stage];
 
+            // The customer only ever sees one document tag: Pending PO (delivered, but their PO is not uploaded yet).
+            // DO and INV tags are for the transporter and the admin.
+            const poTag = (stage === 'delivered' && !job.customer_po) ? ui.pill('Pending PO', 'warn', 'ri-file-warning-line') : '';
+
             const actions = [];
             if (stage === 'review') {
                 actions.push(`<button class="btn btn-secondary btn-sm" data-id="${id}" onclick="app.openCustomerEdit(this.dataset.id)"><i class="ri-edit-line"></i> Edit</button>`);
@@ -2487,7 +2496,7 @@ const app = {
             return `
                 <article class="job-card${open ? '' : ' is-collapsed'}" data-job="${id}">
                     <div class="job-head">
-                        ${pill}
+                        ${pill}${poTag}
                         <span class="job-time">${ui.jobNo(job)}${ui.posted(job.created_at, 'Ordered')}</span>
                     </div>
                     <div class="job-summary">
@@ -3382,9 +3391,9 @@ const app = {
         // Awarded jobs that still need a document: the DO (transporter), the PO (customer) or our INV
         const counts = {
             all: jobs.length,
-            do: jobs.filter(j => ui.todoOf(j) === 'do').length,
-            po: jobs.filter(j => ui.todoOf(j) === 'po').length,
-            inv: jobs.filter(j => ui.todoOf(j) === 'inv').length
+            do: jobs.filter(j => ui.todoOf(j).includes('do')).length,
+            po: jobs.filter(j => ui.todoOf(j).includes('po')).length,
+            inv: jobs.filter(j => ui.todoOf(j).includes('inv')).length
         };
         const active = (this.rtTodo && counts[this.rtTodo] !== undefined) ? this.rtTodo : 'all';
         const todoChips = (counts.do + counts.po + counts.inv > 0 || active !== 'all')
@@ -3393,7 +3402,7 @@ const app = {
                 .map(([key, label]) => `<button type="button" class="chip${key === active ? ' is-active' : ''}" onclick="app.setRtTodo('${key}')">${label} <span class="chip-count">${counts[key]}</span></button>`)
                 .join('')}</div>`
             : '';
-        const shown = active === 'all' ? jobs : jobs.filter(j => ui.todoOf(j) === active);
+        const shown = active === 'all' ? jobs : jobs.filter(j => ui.todoOf(j).includes(active));
         if (shown.length === 0) {
             container.innerHTML = todoChips + ui.empty('ri-checkbox-circle-line', 'All caught up', 'No jobs are waiting on this.');
             return;
