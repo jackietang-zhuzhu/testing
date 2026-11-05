@@ -166,13 +166,15 @@ const ui = {
 
     // A short job reference that every role sees the same way (admin, customer, transporter).
     // Built from the job's own creation date (Malaysia time, so a phone's time zone cannot change it)
-    // and the last 4 characters of its id, e.g. RT-261104-A3F9. Nothing is stored in the database.
+    // as YYMMDD and the 4 characters right after the first "-" of its id (the uuid's 2nd block),
+    // e.g. id 51d7173e-70c4-... on 04 Nov 2026 -> RT-261104-70C4.
+    // These 4 characters are visible in the Supabase table next to the first 8. Nothing is stored in the database.
     jobNoText(job) {
         if (!job || !job.id || !job.created_at) return '';
         const d = new Date(job.created_at);
         if (isNaN(d)) return '';
         const day = d.toLocaleDateString('en-CA', { timeZone: 'Asia/Kuala_Lumpur' }).replace(/-/g, '').slice(2); // YYMMDD
-        const tail = String(job.id).replace(/[^0-9a-f]/gi, '').slice(-4).toUpperCase();
+        const tail = (String(job.id).split('-')[1] || '').toUpperCase();
         return tail ? `RT-${day}-${tail}` : '';
     },
     jobNo(job) {
