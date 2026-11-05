@@ -194,6 +194,7 @@
         "Rejected": "Ditolak",
         "Rejected.": "Ditolak.",
         "Edit the order and resubmit it, or delete it.": "Edit pesanan dan hantar semula, atau padamkannya.",
+        "Please make sure all the details are correct before you resubmit.": "Sila pastikan semua butiran betul sebelum anda menghantar semula.",
         "Cancel order": "Batal pesanan",
         "Order progress": "Kemajuan pesanan",
         "Expand all": "Buka semua",
