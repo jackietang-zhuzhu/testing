@@ -728,7 +728,7 @@ const app = {
         this.cardOpen = {};
         this.cardTouched = {};
         this.cardLoadedFor = null;
-        ['rt', 'hist', 'cust', 'board', 'mine'].forEach(p => ['search', 'from', 'to'].forEach(id => {
+        ['rt', 'hist'].forEach(p => ['search', 'from', 'to'].forEach(id => {
             const el = document.getElementById(p + '-' + id);
             if (el) el.value = '';
         }));
@@ -1333,9 +1333,6 @@ const app = {
 
     applyJobFilter(prefix) {
         if (prefix === 'hist') this.renderRTHistory(this.historyList || []);
-        else if (prefix === 'cust') this.renderCustomerJobs();
-        else if (prefix === 'board') this.renderTransporterJobs(this.boardJobs || []);
-        else if (prefix === 'mine') this.renderMyJobs(this.myJobsBids || []);
         else this.renderRTJobs(this.rtJobsList || []);
     },
 
@@ -1887,6 +1884,13 @@ const app = {
 
     async unassignJob(jobId) {
         if (!await ui.confirm("Are you sure you want to undo this assignment? The job will be returned to the open market.", { title: 'Undo assignment?', okText: 'Undo', tone: 'danger' })) return;
+
+        // The job's own delivery date, used as the agreed date when the accepted bid did not propose another one
+        const { data: known } = await supabaseClient
+            .from('jobs')
+            .select('delivery_date')
+            .eq('id', jobId)
+            .maybeSingle();
 
         // Remember who had the job (the bid is reset below) so the Transporters tab can count the cancellation
         const { data: heldBids } = await supabaseClient
@@ -2453,16 +2457,10 @@ const app = {
     renderCustomerJobs() {
         const container = document.getElementById('customer-jobs-container');
         this.loadCardPrefs();
-        const base = this.customerJobs || [];
-        const all = this.filterJobs(base, 'cust'); // delivery-date filter
-        this.updateFilterUi('cust', all.length, base.length);
+        const all = this.customerJobs || [];
 
-        if (base.length === 0) {
-            container.innerHTML = ui.empty('ri-file-list-3-line', 'No orders yet', 'Tap New order to place your first delivery order.');
-            return;
-        }
         if (all.length === 0) {
-            container.innerHTML = ui.empty('ri-search-line', 'No orders on these dates', 'Try a different date range.');
+            container.innerHTML = ui.empty('ri-file-list-3-line', 'No orders yet', 'Tap New order to place your first delivery order.');
             return;
         }
 
@@ -2483,7 +2481,7 @@ const app = {
             return;
         }
 
-        const cards = shown.map(job => {
+        const cardOf = (job) => {
             const stage = this.customerStage(job);
             const id = ui.esc(job.id);
             const pill = {
@@ -2551,7 +2549,20 @@ const app = {
                     </button>
                 </article>
             `;
-        }).join('');
+        };
+
+        // Group by delivery month, latest month first (same as the admin Active jobs list)
+        const byMonth = new Map();
+        shown.forEach(j => {
+            const k = this.monthKey(j.delivery_date);
+            if (!byMonth.has(k)) byMonth.set(k, []);
+            byMonth.get(k).push(j);
+        });
+        const monthKeys = [...byMonth.keys()].sort((x, y) => x === '' ? 1 : (y === '' ? -1 : y.localeCompare(x)));
+        const cards = monthKeys.map(k =>
+            `<h3 class="month-head">${ui.esc(this.monthLabel(k))}</h3>` +
+            byMonth.get(k).map(cardOf).join('')
+        ).join('');
 
         const toolbar = `<div class="list-bar">${chips}<button type="button" class="link-btn list-toggle-all" id="cust-toggle-all" onclick="app.toggleAllCards()"></button></div>`;
         container.innerHTML = toolbar + cards;
@@ -3148,16 +3159,9 @@ const app = {
     renderMyJobs(allBids) {
         this.myJobsBids = allBids;
         const container = document.getElementById('my-jobs-container');
-        if (allBids.length === 0) {
-            this.updateFilterUi('mine', 0, 0);
-            container.innerHTML = ui.empty('ri-truck-line', 'No assigned jobs yet', 'Jobs awarded to your company will show up here.');
-            return;
-        }
-        const f = this.getJobFilter('mine');
-        const bids = allBids.filter(b => b.jobs && this.dateInRange(f, b.proposed_date || b.jobs.delivery_date));
-        this.updateFilterUi('mine', bids.length, allBids.length);
+        const bids = allBids.filter(b => b.jobs);
         if (bids.length === 0) {
-            container.innerHTML = ui.empty('ri-search-line', 'No jobs on these dates', 'Try a different date range.');
+            container.innerHTML = ui.empty('ri-truck-line', 'No assigned jobs yet', 'Jobs awarded to your company will show up here.');
             return;
         }
 
@@ -3174,13 +3178,16 @@ const app = {
             const doTotal = ui.allStops(job).length;
             const doHave = ui.dosOf(job).length;
             const doMissing = !ui.hasAllDos(job);
-            const doPill = !doMissing ? '' : ui.pill(doHave ? `Pending DO ${doHave}/${doTotal}` : 'Pending DO', 'warn', 'ri-file-warning-line');
+            // The status tag: no DO yet = Pending DO (x/y while some drop-offs are still missing), all DOs in = Delivered
+            const statusPill = doMissing
+                ? ui.pill(doHave ? `Pending DO ${doHave}/${doTotal}` : 'Pending DO', 'warn', 'ri-file-warning-line')
+                : ui.pill('Delivered', 'go', 'ri-check-double-line');
             const doNotice = !doMissing ? '' : `<div class="notice notice-warn"><i class="ri-upload-2-line"></i><span>${doHave ? `Still need to upload the DO for ${doTotal - doHave} drop-off${doTotal - doHave === 1 ? '' : 's'}.` : 'Please upload the DO once the delivery is done.'}</span></div>`;
 
             return `
                 <article class="job-card is-mine${open ? '' : ' is-collapsed'}" data-job="${id}">
                     <div class="job-head">
-                        <span style="display:inline-flex;gap:6px;flex-wrap:wrap">${ui.pill('Assigned to you', 'active', 'ri-truck-fill')}${doPill}</span>
+                        <span style="display:inline-flex;gap:6px;flex-wrap:wrap">${statusPill}</span>
                         <span class="job-time">${ui.jobNo(job)}${ui.posted(job.created_at)}</span>
                     </div>
                     ${this.adminSummary(job, finalDate)}
@@ -3485,8 +3492,7 @@ const app = {
     renderTransporterJobs(allJobs) {
         allJobs = allJobs || [];
         this.boardJobs = allJobs;
-        const jobs = this.filterJobs(allJobs, 'board'); // delivery-date filter
-        this.updateFilterUi('board', jobs.length, allJobs.length);
+        const jobs = allJobs;
         const banned = this.isBanned();
         let bannerHtml = '';
 
@@ -3505,10 +3511,7 @@ const app = {
         }
 
         if (jobs.length === 0) {
-            const filtered = allJobs.length > 0;
-            transporterJobsContainer.innerHTML = bannerHtml + (filtered
-                ? ui.empty('ri-search-line', 'No jobs on these dates', 'Try a different date range.')
-                : ui.empty('ri-truck-line', 'No open jobs right now', 'New loads appear here as soon as they are posted.'));
+            transporterJobsContainer.innerHTML = bannerHtml + ui.empty('ri-truck-line', 'No open jobs right now', 'New loads appear here as soon as they are posted.');
             return;
         }
 
