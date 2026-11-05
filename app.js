@@ -2793,7 +2793,7 @@ const app = {
                             <label class="label" for="rv-price">Price to post (RM)</label>
                             <input type="number" id="rv-price" class="input" min="1" step="any" inputmode="decimal" required>
                             <span class="hint">Customer expected RM ${ui.money(expected)}.</span>
-                            <a href="https://funny-klepon-69696a.netlify.app/" target="_blank" rel="noopener noreferrer" class="hint" style="color:var(--info);font-weight:600;text-decoration:none">
+                            <a href="https://nbt-deliverycalc.netlify.app/" target="_blank" rel="noopener noreferrer" class="hint" style="color:var(--info);font-weight:600;text-decoration:none">
                                 <i class="ri-links-line"></i> Price guide
                             </a>
                         </div>
