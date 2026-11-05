@@ -204,15 +204,31 @@ const ui = {
             return w.toLowerCase().replace(/(^|[(\-\/])([a-z])/g, (m, p, c) => p + c.toUpperCase());
         }).join(' ');
     },
-    // Extra drop-offs saved on a job (jobs.extra_stops, a JSON list of {loc, link}).
-    // Returns [] for ordinary single-drop-off jobs, so nothing extra is ever drawn for them.
-    stops(job) {
-        let raw = job && job.extra_stops;
+    // ALL drop-offs of a job as one list, read from jobs.stops: [{ loc, link, do: { url, uploaded_at } | null }].
+    // stops[0] is the main drop-off, then the extra ones (at most 5 in total). Index i is the same number used by
+    // 'Drop-off i+1' and by contacts.drops[i] (person in charge + phone, still stored in jobs.contacts).
+    allStops(job) {
+        let raw = job && job.stops;
         if (typeof raw === 'string') { try { raw = JSON.parse(raw); } catch { raw = []; } }
         if (!Array.isArray(raw)) return [];
+        const cs = this.contactsOf(job);
         return raw
-            .filter(s => s && typeof s.loc === 'string' && s.loc.trim())
-            .map(s => ({ loc: s.loc, link: typeof s.link === 'string' ? s.link : '' }));
+            .filter(s => s && typeof s.loc === 'string')
+            .map((s, i) => ({
+                loc: s.loc,
+                link: typeof s.link === 'string' ? s.link : '',
+                do: (s.do && typeof s.do === 'object' && s.do.url) ? { url: s.do.url, uploaded_at: s.do.uploaded_at } : null,
+                pic: (cs.drops[i] || {}).pic || '',
+                phone: (cs.drops[i] || {}).phone || ''
+            }));
+    },
+    // The extra drop-offs only (everything after the main one)
+    stops(job) { return this.allStops(job).slice(1); },
+    destLoc(job) { const s = this.allStops(job)[0]; return s ? s.loc : ''; },
+    // Builds the value saved in jobs.stops from the main drop-off and the extra ones collected from a form
+    buildStops(mainLoc, mainLink, extras) {
+        return [{ loc: String(mainLoc || '').trim(), link: String(mainLink || '').trim() }]
+            .concat((extras || []).map(x => ({ loc: x.loc, link: x.link || '' })));
     },
     // Person in charge + phone for each stop, saved on jobs.contacts as
     //   { pickup: { pic, phone }, drops: [{ pic, phone }, ...] }   (drops[0] = main drop-off, then the extra ones)
@@ -243,14 +259,14 @@ const ui = {
     },
     // contacts: false hides the phone numbers (used on the open job board; they show once a job is assigned)
     route(job, { contacts = true } = {}) {
-        const drops = [{ loc: job.dest_loc, link: job.dest_maps_link }, ...this.stops(job)];
+        const drops = this.allStops(job);
         const multi = drops.length > 1;
         const cs = contacts ? this.contactsOf(job) : null;
         const dropHtml = drops.map((d, i) => {
             const last = i === drops.length - 1;
             const label = multi ? `Open drop-off ${i + 1} in Maps` : 'Open drop-off in Maps';
             const tag = multi ? `<span class="route-tag">Drop-off ${i + 1}</span>` : '';
-            const line = cs ? this.contactLine(cs.drops[i]) : '';
+            const line = cs ? this.contactLine(d) : '';
             return `<li class="route-stop ${last ? 'route-to' : 'route-via'}${line ? ' has-contact' : ''}"><span class="route-place">${this.esc(this.place(d.loc))}</span>${tag}${this.mapLink(d.link, label)}${line}</li>`;
         }).join('');
         const pickLine = cs ? this.contactLine(cs.pickup) : '';
@@ -263,8 +279,8 @@ const ui = {
     facts(job, { date = '', dateLabel = 'Delivery', delivered = false } = {}) {
         const items = [];
         items.push(`<li class="fact"><i class="ri-box-3-line"></i>${this.esc(job.quantity)} ${this.esc(job.item_desc)}</li>`);
-        const extraDrops = this.stops(job).length;
-        if (extraDrops) items.push(`<li class="fact"><i class="ri-route-line"></i>${extraDrops + 1} drop-offs</li>`);
+        const dropTotal = this.allStops(job).length;
+        if (dropTotal > 1) items.push(`<li class="fact"><i class="ri-route-line"></i>${dropTotal} drop-offs</li>`);
         if (date) items.push(`<li class="fact"><i class="ri-calendar-line"></i>${this.esc(dateLabel)} ${this.fmtDate(date)}</li>`);
         if (job.unloading_service) items.push(`<li class="fact fact-warn"><i class="ri-hand-coin-line"></i>Unloading required</li>`);
         if (delivered) items.push(`<li class="fact fact-ok"><i class="ri-check-double-line"></i>Delivered</li>`);
@@ -285,27 +301,30 @@ const ui = {
         return /\.pdf$/i.test(String(url || '').split(/[?#]/)[0]);
     },
     // ---- Delivery Orders (DO) ----
-    // A job with one drop-off has one DO (jobs.do_url). A job with several drop-offs keeps one DO per drop-off in
-    // jobs.dos ([{ stop, url, uploaded_at }], stop 0 = the main drop-off) and only gets do_url (= delivered)
-    // once every drop-off has its DO. Older jobs just have do_url.
+    // Every drop-off in jobs.stops carries its own DO ({ url, uploaded_at } or null). The job counts as delivered
+    // once every drop-off has its DO.
     parseDos(job) {
-        let raw = job && job.dos;
-        if (typeof raw === 'string') { try { raw = JSON.parse(raw); } catch { raw = null; } }
-        if (!Array.isArray(raw)) return [];
-        return raw
-            .map(d => ({ stop: Number(d && d.stop) || 0, url: app.safeUrl(d && d.url), uploaded_at: d && d.uploaded_at }))
-            .filter(d => d.url)
-            .sort((a, b) => a.stop - b.stop);
+        return this.allStops(job)
+            .map((st, i) => ({ stop: i, url: app.safeUrl(st.do && st.do.url), uploaded_at: st.do && st.do.uploaded_at }))
+            .filter(d => d.url);
     },
     dropLabel(job, i) {
-        const drops = [job.dest_loc, ...this.stops(job).map(s => s.loc)];
-        return `Drop-off ${i + 1}` + (drops[i] ? ` · ${this.place(drops[i])}` : '');
+        const drops = this.allStops(job);
+        return `Drop-off ${i + 1}` + (drops[i] ? ` · ${this.place(drops[i].loc)}` : '');
+    },
+    hasAllDos(job) {
+        const total = this.allStops(job).length;
+        return total > 0 && this.parseDos(job).length === total;
+    },
+    // When the job counted as delivered: the latest DO upload
+    deliveredAt(job) {
+        const times = this.parseDos(job).map(d => d.uploaded_at).filter(Boolean).sort();
+        return times[times.length - 1] || '';
     },
     dosOf(job) {
         if (!job) return [];
-        const list = this.parseDos(job);
-        if (list.length) return list.map(d => ({ ...d, label: this.dropLabel(job, d.stop) }));
-        return job.do_url ? [{ stop: 0, label: '', url: job.do_url, uploaded_at: job.do_uploaded_at }] : [];
+        const single = this.allStops(job).length === 1; // one drop-off: no "Drop-off 1" label
+        return this.parseDos(job).map(d => ({ ...d, label: single ? '' : this.dropLabel(job, d.stop) }));
     },
     doSlip(job, { showTime = false, timeLabel = 'Uploaded', download = false } = {}) {
         const items = this.dosOf(job);
@@ -336,7 +355,7 @@ const ui = {
         }
 
         // One DO per drop-off
-        const total = this.stops(job).length + 1;
+        const total = this.allStops(job).length;
         return `<div class="remarks do-block">
             <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:4px 12px"><b>Delivery Orders (DO)</b>${muted(`${items.length} of ${total} uploaded`)}</div>
             ${items.map(d => `<div class="do-item">
@@ -347,12 +366,12 @@ const ui = {
     },
     // Transporter: a job with several drop-offs gets one upload button per drop-off
     doStopMode(job) {
-        return this.stops(job).length > 0 && (this.parseDos(job).length > 0 || !job.do_url);
+        return this.allStops(job).length > 1;
     },
     doStopUploads(job) {
         if (!this.doStopMode(job)) return '';
         const have = new Set(this.parseDos(job).map(d => d.stop));
-        const total = this.stops(job).length + 1;
+        const total = this.allStops(job).length;
         const rows = Array.from({ length: total }, (_, i) => {
             const done = have.has(i);
             return `<div class="do-upload-row">
@@ -376,11 +395,26 @@ const ui = {
     awarded(job) {
         return !!job && ['assigned', 'delivered', 'pending_inv', 'completed'].includes(job.status);
     },
+    // ONE place that decides the document tag of an awarded job (admin cards and the filter chips both use it).
+    // Exactly one state, first match wins:
+    //   completed     the admin marked it complete
+    //   pending_do    a DO is still missing (for several drop-offs: any drop-off without its DO)
+    //   pending_po    DO is in, the customer's PO is not (only jobs that came from a customer have a PO)
+    //   pending_inv   DO (and PO) are in, our invoice is not
+    //   ready         DO, PO and INV are all in: waiting for Mark as complete (or the database finishes it)
+    // Returns null for a job that is not awarded yet (those use the open / review pills).
+    docState(job) {
+        if (!this.awarded(job)) return null;
+        if (job.status === 'completed') return { key: 'completed', label: 'Completed', tone: 'done', icon: 'ri-check-double-line' };
+        if (!this.hasAllDos(job)) return { key: 'pending_do', label: 'Pending DO', tone: 'info', icon: 'ri-file-warning-line' };
+        if (job.customers && !job.customer_po) return { key: 'pending_po', label: 'Pending PO', tone: 'warn', icon: 'ri-file-warning-line' };
+        if (!job.invoice_file) return { key: 'pending_inv', label: 'Pending INV', tone: 'warn', icon: 'ri-file-upload-line' };
+        return { key: 'ready', label: 'Ready to complete', tone: 'go', icon: 'ri-check-line' };
+    },
+    // Filter-chip key for the admin Jobs list: 'do' | 'po' | 'inv', or '' when nothing is pending
     todoOf(job) {
-        if (!job || !['delivered', 'pending_inv'].includes(job.status) || !job.do_url || !job.customers) return '';
-        if (!job.customer_po) return 'po';
-        if (!job.invoice_file) return 'inv';
-        return '';
+        const st = this.docState(job);
+        return st ? ({ pending_do: 'do', pending_po: 'po', pending_inv: 'inv' }[st.key] || '') : '';
     },
     // A document attached to a job but stored apart from it, so transporters never receive it:
     //   job.customer_po   = { url, uploaded_at }  the customer's own PO (uploaded after delivery)
@@ -443,7 +477,7 @@ const ui = {
     // Admin version of the DO box: shows each DO and lets the admin upload or replace it (one per drop-off when there are several)
     doSlipAdmin(job) {
         const items = this.dosOf(job);
-        const total = this.stops(job).length + 1;
+        const total = this.allStops(job).length;
         const head = 'display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:4px 12px';
         const note = (html) => `<span style="font-weight:400;font-size:.75rem;color:var(--muted)">${html}</span>`;
         const when = (d) => (d && d.uploaded_at) ? note('Uploaded ' + this.fmtDateTime(d.uploaded_at)) : '';
@@ -559,7 +593,7 @@ const app = {
     myHistoryBids: [],
     tpData: null,            // Transporters tab: loaded bids, transporters, cancellations and ratings
     ratingBusy: null,        // customer: id of the order whose rating is being saved (blocks a second tap meanwhile)
-    noRatings: false,        // no longer used (ratings now live in the jobs table); kept so the rating box code still works
+    noRatings: false,        // set when the rating columns are not in job_docs yet (the rating box is then hidden)
     tpMonth: '',             // Transporters tab: chosen month ('' = not chosen yet, 'all' = all time)
     cardOpen: {},            // customer Orders list: job id -> true (expanded) / false (collapsed). Survives auto-refresh.
     cardTouched: {},         // job ids the customer opened/closed themselves: only these are saved on the device
@@ -1219,7 +1253,7 @@ const app = {
                     <div class="job-body" id="jb-${id}">
                         ${ui.customerLine(job)}
                         ${ui.route(job)}
-                        ${ui.facts(job, { date: job.delivery_date, delivered: !!job.do_url })}
+                        ${ui.facts(job, { date: job.delivery_date, delivered: ui.hasAllDos(job) })}
                         ${this.adminDocs(job)}
                         ${ui.ratingLine(job)}
                     </div>
@@ -1272,7 +1306,7 @@ const app = {
             const cs = ui.contactsOf(j);
             const hay = [
                 c.company_name, c.contact_person,
-                j.source_loc, j.dest_loc, ...ui.stops(j).map(s => s.loc),
+                j.source_loc, ...ui.allStops(j).map(s => s.loc),
                 j.item_desc, j.remarks, ui.jobNoText(j),
                 cs.pickup.pic, cs.pickup.phone, ...cs.drops.flatMap(d => [d.pic, d.phone])
             ].filter(Boolean).join(' ').toLowerCase();
@@ -1313,15 +1347,19 @@ const app = {
         // Automatically determine if it should go back to "assigned" or "open" based on its history
         // A job goes back to "assigned" if any sign of an award is left: assignment time, a DO,
         // an accepted bid, or a PO / invoice. Only a job with none of these goes back to "open".
-        const { data: job } = await supabaseClient.from('jobs').select('assigned_at, do_url, po_url, invoice_url').eq('id', jobId).single();
-        let awarded = !!(job && (job.assigned_at || job.do_url || job.po_url || job.invoice_url));
+        const { data: job } = await supabaseClient.from('jobs').select('assigned_at, stops').eq('id', jobId).single();
+        let awarded = !!(job && (job.assigned_at || ui.parseDos(job).length));
         if (!awarded) {
-            const { data: acc } = await supabaseClient.from('bids').select('id').eq('job_id', jobId).eq('status', 'accepted').limit(1);
-            awarded = !!(acc && acc.length);
+            const [bidRes, docRes] = await Promise.all([
+                supabaseClient.from('bids').select('id').eq('job_id', jobId).eq('status', 'accepted').limit(1),
+                supabaseClient.from('job_docs').select('po_url, invoice_url').eq('job_id', jobId).limit(1)
+            ]);
+            const doc = docRes.data && docRes.data[0];
+            awarded = !!((bidRes.data && bidRes.data.length) || (doc && (doc.po_url || doc.invoice_url)));
         }
         // A job that already has its DO goes back as 'delivered' and is put on hold (hold_completion):
         // the database will not auto-complete it again, so it stays in Active jobs until the admin presses Mark as complete.
-        const hasDo = !!(job && job.do_url);
+        const hasDo = !!(job && ui.hasAllDos(job));
         const newStatus = awarded ? (hasDo ? 'delivered' : 'assigned') : 'open';
         const patch = { status: newStatus };
         if (hasDo) patch.hold_completion = true;
@@ -1459,8 +1497,6 @@ const app = {
         const newJob = {
             source_loc: document.getElementById('job-source').value,
             source_maps_link: document.getElementById('job-source-link').value,
-			dest_loc: document.getElementById('job-dest').value,
-            dest_maps_link: document.getElementById('job-dest-link').value,
             item_desc: itemDesc,
             quantity: parseInt(document.getElementById('job-qty').value),
             delivery_date: document.getElementById('job-date').value,
@@ -1471,9 +1507,8 @@ const app = {
             photo_2_url: photo2Url  
         };
 
-        // Only sent when used, so ordinary single drop-off jobs behave exactly as before
-        const extraStops = this.collectStops('job');
-        if (extraStops.length) newJob.extra_stops = extraStops;
+        // The main drop-off and the extra ones go into one list
+        newJob.stops = ui.buildStops(document.getElementById('job-dest').value, document.getElementById('job-dest-link').value, this.collectStops('job'));
         // Same idea for the contacts: only sent when filled in
         const contacts = this.collectContacts('job');
         if (contacts) newJob.contacts = contacts;
@@ -1701,7 +1736,7 @@ const app = {
                     <span class="job-time">${ui.jobNo(job)}${ui.posted(job.created_at)}</span>
                 </div>
                 ${ui.route(job)}
-                ${ui.facts(job, { date: job.delivery_date, dateLabel: 'Original date', delivered: !!job.do_url })}
+                ${ui.facts(job, { date: job.delivery_date, dateLabel: 'Original date', delivered: ui.hasAllDos(job) })}
                 ${ui.photos(job, true)}
                 ${ui.remarks(job.remarks)}
                 <div class="job-foot">
@@ -1856,12 +1891,15 @@ const app = {
         const reset = {
             status: 'open',
             accepted_price: null,
-            assigned_at: null,
-            do_url: null,
-            do_uploaded_at: null
+            assigned_at: null
         };
-        const known = (this.rtJobsList || []).find(j => String(j.id) === String(jobId));
-        if (known && known.dos != null) reset.dos = null;
+        // Undo also removes the uploaded DOs: keep every drop-off but clear its DO
+        let known = (this.rtJobsList || []).find(j => String(j.id) === String(jobId));
+        if (!known || !ui.allStops(known).length) {
+            known = (await supabaseClient.from('jobs').select('stops').eq('id', jobId).single()).data;
+        }
+        const clearedStops = ui.allStops(known).map(st => ({ loc: st.loc, link: st.link }));
+        if (clearedStops.length) reset.stops = clearedStops;
         const { data: updatedJob, error: jobError } = await supabaseClient
             .from('jobs')
             .update(reset)
@@ -1952,14 +1990,14 @@ const app = {
         const set = (id, v) => { document.getElementById(id).value = v == null ? '' : v; };
         set('cj-source', job.source_loc);
         set('cj-source-link', job.source_maps_link);
-        set('cj-dest', job.dest_loc);
-        set('cj-dest-link', job.dest_maps_link);
+        set('cj-dest', ui.destLoc(job));
+        set('cj-dest-link', (ui.allStops(job)[0] || {}).link);
         const cs = ui.contactsOf(job);
         set('cj-source-pic', cs.pickup.pic);
         set('cj-source-phone', cs.pickup.phone);
         set('cj-dest-pic', (cs.drops[0] || {}).pic);
         set('cj-dest-phone', (cs.drops[0] || {}).phone);
-        this.fillStops('cj', ui.stops(job).map((s, i) => ({ ...s, ...(cs.drops[i + 1] || {}) })));
+        this.fillStops('cj', ui.allStops(job).slice(1));
 
         const sel = document.getElementById('cj-item');
         const known = Array.from(sel.options).map(o => o.value).filter(v => v !== 'Others');
@@ -2158,7 +2196,7 @@ const app = {
 
     // submit_customer_job may return the new job's id (as text, or inside a row), or nothing at all
     // ---- Customer PO and our invoice (INV) ----
-    // Both are files kept apart from the job (columns on the jobs table) so transporters never get them.
+    // Both are files kept apart from the job (table job_docs) so transporters never get them.
     // The customer uploads the PO once the job is delivered; we then upload the INV, which the customer can download.
     checkDocFile(file, noun) {
         const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
@@ -2236,17 +2274,60 @@ const app = {
         else this.fetchJobsForRT();
     },
 
-    // Adds job.customer_po, job.invoice_file ({ url, uploaded_at } or null) and job.customer_rating to each job.
-    // The data now lives in the jobs table itself (po_url, invoice_url, rating, ...), so nothing is fetched here:
-    // the jobs / customer_jobs queries already return those columns. Transporters never get them because
-    // transporter_jobs does not list them.
+    // Adds job.customer_po and job.invoice_file ({ url, uploaded_at } or null) to each job, from the job_docs table
+    // (one row per job). These are extras: if they cannot be loaded the jobs still show. Row-level security decides
+    // what comes back: a customer only gets their own, the admin gets all, transporters get none.
     async attachJobDocs(jobs) {
+        if (!jobs || !jobs.length) return jobs;
+        const docCols = 'job_id, po_url, po_uploaded_at, invoice_url, invoice_uploaded_at';
+        const load = (cols) => {
+            let query = supabaseClient.from('job_docs').select(cols);
+            if (jobs.length === 1) query = query.eq('job_id', jobs[0].id);
+            return query;
+        };
+        let { data, error } = await load(this.noRatings ? docCols : docCols + ', rating, rated_at');
+        if (error && !this.noRatings && /rating|rated_at/i.test(error.message || '')) {
+            // the rating columns are not added in Supabase yet: carry on without ratings (and hide the rating box)
+            this.noRatings = true;
+            ({ data, error } = await load(docCols));
+        }
+        if (error) {
+            // No job_docs table: PO / INV / rating are columns of the job row itself (jobs.po_url, jobs.invoice_url, jobs.rating ...)
+            console.error('Documents load error:', error);
+            const pick = (url, at) => url ? { url, uploaded_at: at } : null;
+            jobs.forEach(x => {
+                x.customer_po = pick(x.po_url, x.po_uploaded_at);
+                x.invoice_file = pick(x.invoice_url, x.invoice_uploaded_at);
+                x.customer_rating = x.rating ? { rating: Number(x.rating), created_at: x.rated_at } : null;
+            });
+            return jobs;
+        }
+        const byJob = new Map((data || []).map(r => [String(r.job_id), r]));
         const pack = (url, at) => url ? { url, uploaded_at: at } : null;
-        (jobs || []).forEach(x => {
-            x.customer_po = pack(x.po_url, x.po_uploaded_at);
-            x.invoice_file = pack(x.invoice_url, x.invoice_uploaded_at);
+        jobs.forEach(x => {
+            const r = byJob.get(String(x.id));
+            x.customer_po = r ? pack(r.po_url, r.po_uploaded_at) : null;
+            x.invoice_file = r ? pack(r.invoice_url, r.invoice_uploaded_at) : null;
             // the customer's star rating of the transporter (customers get their own, the admin gets all)
-            x.customer_rating = x.rating ? { rating: Number(x.rating), created_at: x.rated_at } : null;
+            x.customer_rating = (r && r.rating) ? { rating: Number(r.rating), created_at: r.rated_at } : null;
+        });
+        return jobs;
+    },
+
+    // Adds job.contacts to the customer's own jobs if the customer_jobs view did not carry them. They come from the view customer_job_extras
+    // (the customer_jobs view itself is left alone). If it is not there yet the orders still show without them.
+    async attachJobExtras(jobs) {
+        if (!jobs || !jobs.length || this.noJobExtras) return jobs;
+        const { data, error } = await supabaseClient.from('customer_job_extras').select('job_id, contacts, dos');
+        if (error) {
+            console.error('Job extras load error:', error);
+            if (/does not exist|schema cache|relation/i.test(error.message || '')) this.noJobExtras = true; // stop asking until the page is reloaded
+            return jobs;
+        }
+        const byJob = new Map((data || []).map(r => [String(r.job_id), r]));
+        jobs.forEach(x => {
+            const r = byJob.get(String(x.id));
+            if (r && x.contacts == null) x.contacts = r.contacts;
         });
         return jobs;
     },
@@ -2342,14 +2423,14 @@ const app = {
         if (job.status === 'rejected') return 'rejected';
         if (job.status === 'pending_review') return 'review';
         if (['delivered', 'pending_inv', 'completed'].includes(job.status)) return 'delivered';
-        if (job.status === 'assigned') return job.do_url ? 'delivered' : 'delivering';
+        if (job.status === 'assigned') return ui.hasAllDos(job) ? 'delivered' : 'delivering';
         return 'approved';
     },
 
     customerSteps(stage, job) {
         const order = ['review', 'approved', 'delivering', 'delivered'];
         const labels = ['Order received', 'Looking for driver', 'Driver assigned', 'Delivered'];
-        const times = [job.created_at, job.approved_at, job.assigned_at, job.do_uploaded_at];
+        const times = [job.created_at, job.approved_at, job.assigned_at, ui.deliveredAt(job)];
         const reached = order.indexOf(stage);
         return `<ol class="steps" aria-label="Order progress">${labels.map((label, i) => {
             const t = i <= reached ? ui.fmtShort(times[i]) : '';
@@ -2435,8 +2516,8 @@ const app = {
             const open = this.cardOpen[job.id];
 
             // One-line summary shown only while the card is collapsed
-            const dropCount = ui.stops(job).length + 1;
-            const sumRoute = `${ui.esc(ui.place(job.source_loc))} <span class="sum-arrow" aria-hidden="true">→</span> ${ui.esc(ui.place(job.dest_loc))}${dropCount > 1 ? ` <span class="sum-more">+${dropCount - 1} more</span>` : ''}`;
+            const dropCount = ui.allStops(job).length;
+            const sumRoute = `${ui.esc(ui.place(job.source_loc))} <span class="sum-arrow" aria-hidden="true">→</span> ${ui.esc(ui.place(ui.destLoc(job)))}${dropCount > 1 ? ` <span class="sum-more">+${dropCount - 1} more</span>` : ''}`;
             const sumMeta = [
                 `${ui.esc(job.quantity)} ${ui.esc(job.item_desc)}`,
                 job.delivery_date ? `Delivery ${ui.fmtDate(job.delivery_date)}` : ''
@@ -2560,7 +2641,7 @@ const app = {
         }
         container.innerHTML = jobs.map(job => {
             const id = ui.esc(job.id);
-            const delivered = !!job.do_url;
+            const delivered = ui.hasAllDos(job);
             // Everything on the History page counts as completed
             const pill = ui.pill('Completed', 'done', 'ri-check-double-line');
             // Same rule as the Orders list: only a delivered order can be booked again
@@ -2571,7 +2652,7 @@ const app = {
             if (!(job.id in this.cardOpen)) this.cardOpen[job.id] = false;
             const open = this.cardOpen[job.id];
             // PO can be uploaded once the job has been assigned (a DO is not needed)
-            const canPo = !!(job.assigned_at || job.do_url);
+            const canPo = !!(job.assigned_at || ui.parseDos(job).length);
             return `
                 <article class="job-card${open ? '' : ' is-collapsed'}" data-job="${id}">
                     <div class="job-head">
@@ -2765,14 +2846,14 @@ const app = {
         const set = (id, v) => { document.getElementById(id).value = v == null ? '' : v; };
         set('rv-source', job.source_loc);
         set('rv-source-link', job.source_maps_link);
-        set('rv-dest', job.dest_loc);
-        set('rv-dest-link', job.dest_maps_link);
+        set('rv-dest', ui.destLoc(job));
+        set('rv-dest-link', (ui.allStops(job)[0] || {}).link);
         const cs = ui.contactsOf(job);
         set('rv-source-pic', cs.pickup.pic);
         set('rv-source-phone', cs.pickup.phone);
         set('rv-dest-pic', (cs.drops[0] || {}).pic);
         set('rv-dest-phone', (cs.drops[0] || {}).phone);
-        this.fillStops('rv', ui.stops(job).map((s, i) => ({ ...s, ...(cs.drops[i + 1] || {}) })));
+        this.fillStops('rv', ui.allStops(job).slice(1));
 
         const sel = document.getElementById('rv-item');
         const known = Array.from(sel.options).map(o => o.value).filter(v => v !== 'Others');
@@ -2856,14 +2937,12 @@ const app = {
         const changes = {
             source_loc: v('rv-source'),
             source_maps_link: v('rv-source-link') || null,
-            dest_loc: v('rv-dest'),
-            dest_maps_link: v('rv-dest-link') || null,
             item_desc: itemDesc,
             quantity: parseInt(v('rv-qty')),
             delivery_date: v('rv-date'),
             unloading_service: document.getElementById('rv-unloading').checked,
             remarks: v('rv-remarks') || null,
-            extra_stops: this.collectStops('rv'),
+            stops: ui.buildStops(v('rv-dest'), v('rv-dest-link'), this.collectStops('rv')),
             contacts: this.collectContacts('rv')
         };
 
@@ -3051,7 +3130,7 @@ const app = {
                     ${this.adminSummary(job, finalDate)}
                     <div class="job-body" id="jb-${id}">
                         ${ui.route(job)}
-                        ${ui.facts(job, { date: finalDate, dateLabel: 'Agreed delivery', delivered: !!job.do_url })}
+                        ${ui.facts(job, { date: finalDate, dateLabel: 'Agreed delivery', delivered: ui.hasAllDos(job) })}
                         ${ui.photos(job, true)}
                         ${ui.remarks(job.remarks)}
                         ${ui.doSlip(job, { showTime: true, download: true })}
@@ -3091,9 +3170,9 @@ const app = {
             const open = this.cardOpen[job.id];
 
             // Reminder while the DO is still missing (stays visible when the card is collapsed)
-            const doTotal = ui.stops(job).length + 1;
+            const doTotal = ui.allStops(job).length;
             const doHave = ui.dosOf(job).length;
-            const doMissing = !job.do_url;
+            const doMissing = !ui.hasAllDos(job);
             const doPill = !doMissing ? '' : ui.pill(doHave ? `Pending DO ${doHave}/${doTotal}` : 'Pending DO', 'warn', 'ri-file-warning-line');
             const doNotice = !doMissing ? '' : `<div class="notice notice-warn"><i class="ri-upload-2-line"></i><span>${doHave ? `Still need to upload the DO for ${doTotal - doHave} drop-off${doTotal - doHave === 1 ? '' : 's'}.` : 'Please upload the DO once the delivery is done.'}</span></div>`;
 
@@ -3106,7 +3185,7 @@ const app = {
                     ${this.adminSummary(job, finalDate)}
                     <div class="job-body" id="jb-${id}">
                         ${ui.route(job)}
-                        ${ui.facts(job, { date: finalDate, dateLabel: 'Agreed delivery', delivered: !!job.do_url })}
+                        ${ui.facts(job, { date: finalDate, dateLabel: 'Agreed delivery', delivered: ui.hasAllDos(job) })}
                         ${ui.photos(job)}
                         ${ui.remarks(job.remarks)}
                         ${ui.doSlip(job)}
@@ -3117,9 +3196,9 @@ const app = {
                     <div class="job-foot">
                         ${ui.price('Your price', bid.proposed_price)}
                         ${stopMode ? '' : `<div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
-                        <label class="btn ${job.do_url ? 'btn-secondary' : 'btn-primary'} btn-sm" style="cursor:pointer">
-                            <i class="ri-upload-2-line"></i> ${job.do_url ? 'Replace DO' : 'Upload DO'}
-                            <input type="file" accept="image/*,application/pdf" hidden data-job-id="${ui.esc(job.id)}" ${job.do_url ? `onclick="return app.confirmReplace(event, this, 'This will replace the DO you already uploaded. Continue?')"` : ''} onchange="app.uploadDO(this)">
+                        <label class="btn ${ui.hasAllDos(job) ? 'btn-secondary' : 'btn-primary'} btn-sm" style="cursor:pointer">
+                            <i class="ri-upload-2-line"></i> ${ui.hasAllDos(job) ? 'Replace DO' : 'Upload DO'}
+                            <input type="file" accept="image/*,application/pdf" hidden data-job-id="${ui.esc(job.id)}" ${ui.hasAllDos(job) ? `onclick="return app.confirmReplace(event, this, 'This will replace the DO you already uploaded. Continue?')"` : ''} onchange="app.uploadDO(this)">
                         </label>
                         <span class="hint">Image or PDF, max 10 MB</span>
                         </div>`}
@@ -3147,12 +3226,11 @@ const app = {
     // Colour meaning: blue = waiting on someone else, dark teal = on the road,
     // yellow = the admin has something to do, green = finished well, grey = filed away.
     statusPill(job) {
+        // Awarded jobs: one tag from ui.docState (Pending DO / PO / INV, Ready to complete, Completed)
+        const st = ui.docState(job);
+        if (st) return ui.pill(st.label, st.tone, st.icon);
         switch (job.status) {
             case 'pending_review': return ui.pill('Awaiting review', 'warn', 'ri-time-line');
-            case 'assigned': return ui.pill('Assigned', 'active', 'ri-truck-line');
-            case 'delivered': return ui.pill('Delivered', 'go', 'ri-check-line');
-            case 'pending_inv': return ui.pill('Pending INV', 'warn', 'ri-file-upload-line');
-            case 'completed': return ui.pill('Completed', 'done', 'ri-check-double-line');
             case 'archived': return ui.pill('Completed', 'neutral', 'ri-archive-line');
             default: return ui.pill('Open for bids', 'info', 'ri-megaphone-line');
         }
@@ -3182,15 +3260,15 @@ const app = {
 
     // Everything a job needs before it is finished
     isComplete(job) {
-        return !!(job && job.accepted_price != null && job.do_url && job.customer_po && job.invoice_file);
+        return !!(job && job.accepted_price != null && ui.hasAllDos(job) && job.customer_po && job.invoice_file);
     },
 
     // Admin: mark one job as completed by hand. The DO and the INV are required; the PO is optional
     // (a verbal booking may never get one), so a missing PO only shows a reminder.
     async completeJob(jobId) {
         const job = (this.rtJobsList || []).find(j => String(j.id) === String(jobId));
-        if (job && (!job.do_url || !job.invoice_file)) {
-            const need = [!job.do_url ? 'DO' : '', !job.invoice_file ? 'INV' : ''].filter(Boolean).join(' and ');
+        if (job && (!ui.hasAllDos(job) || !job.invoice_file)) {
+            const need = [!ui.hasAllDos(job) ? 'DO' : '', !job.invoice_file ? 'INV' : ''].filter(Boolean).join(' and ');
             ui.notify(`Cannot complete yet: the ${need} must be uploaded first.`);
             return;
         }
@@ -3212,8 +3290,8 @@ const app = {
 
     // One-line summary shown while an admin card is collapsed
     adminSummary(job, date = job.delivery_date) {
-        const dropCount = ui.stops(job).length + 1;
-        const route = `${ui.esc(ui.place(job.source_loc))} <span class="sum-arrow" aria-hidden="true">→</span> ${ui.esc(ui.place(job.dest_loc))}${dropCount > 1 ? ` <span class="sum-more">+${dropCount - 1} more</span>` : ''}`;
+        const dropCount = ui.allStops(job).length;
+        const route = `${ui.esc(ui.place(job.source_loc))} <span class="sum-arrow" aria-hidden="true">→</span> ${ui.esc(ui.place(ui.destLoc(job)))}${dropCount > 1 ? ` <span class="sum-more">+${dropCount - 1} more</span>` : ''}`;
         const c = job.customers && job.customers.company_name;
         const meta = [
             c ? ui.esc(c) : '',
@@ -3331,15 +3409,16 @@ const app = {
             return;
         }
 
-        // Delivered customer jobs that still need something from us: waiting for the customer's PO, or our INV still to upload
+        // Awarded jobs that still need a document: the DO (transporter), the PO (customer) or our INV
         const counts = {
             all: jobs.length,
+            do: jobs.filter(j => ui.todoOf(j) === 'do').length,
             po: jobs.filter(j => ui.todoOf(j) === 'po').length,
             inv: jobs.filter(j => ui.todoOf(j) === 'inv').length
         };
         const active = (this.rtTodo && counts[this.rtTodo] !== undefined) ? this.rtTodo : 'all';
-        const todoChips = (counts.po + counts.inv > 0 || active !== 'all')
-            ? `<div class="chips">${[['all', 'All'], ['po', 'Pending PO'], ['inv', 'Pending INV']]
+        const todoChips = (counts.do + counts.po + counts.inv > 0 || active !== 'all')
+            ? `<div class="chips">${[['all', 'All'], ['do', 'Pending DO'], ['po', 'Pending PO'], ['inv', 'Pending INV']]
                 .filter(([key]) => key === 'all' || key === active || counts[key] > 0)
                 .map(([key, label]) => `<button type="button" class="chip${key === active ? ' is-active' : ''}" onclick="app.setRtTodo('${key}')">${label} <span class="chip-count">${counts[key]}</span></button>`)
                 .join('')}</div>`
@@ -3353,17 +3432,14 @@ const app = {
         const cardOf = (job) => {
             const isAssigned = ui.awarded(job);
             const id = ui.esc(job.id);
-            const todo = ui.todoOf(job);
-            const todoPill = todo === 'po' ? ui.pill('Pending PO', 'warn', 'ri-file-warning-line')
-                : (todo === 'inv' ? ui.pill('Pending INV', 'warn', 'ri-file-upload-line') : '');
-            const delivered = isAssigned && !!job.do_url;
+            const delivered = isAssigned && ui.hasAllDos(job);
             if (!(job.id in this.cardOpen)) this.cardOpen[job.id] = false;
             const open = this.cardOpen[job.id];
 
             return `
                 <article class="job-card${open ? '' : ' is-collapsed'}" data-job="${id}">
                     <div class="job-head">
-                        <span style="display:inline-flex;gap:6px;flex-wrap:wrap">${this.statusPill(job)}${todoPill}</span>
+                        <span style="display:inline-flex;gap:6px;flex-wrap:wrap">${this.statusPill(job)}</span>
                         <span class="job-time">${ui.jobNo(job)}${ui.posted(job.created_at)}</span>
                     </div>
                     ${this.adminSummary(job)}
@@ -3518,7 +3594,7 @@ const app = {
         container.innerHTML = jobs.map(job => `
             <div class="activity-row">
                 <div>
-                    <p class="activity-route">${ui.esc(job.source_loc)} to ${ui.esc(job.dest_loc)}</p>
+                    <p class="activity-route">${ui.esc(job.source_loc)} to ${ui.esc(ui.destLoc(job))}</p>
                     <p class="activity-meta">${ui.esc(job.quantity)} ${ui.esc(job.item_desc)}, posted ${ui.fmtDate(job.created_at)}</p>
                 </div>
                 <div class="activity-price">
@@ -3561,7 +3637,7 @@ const app = {
             this.fetchAllRows(() => supabaseClient.from('bids').select('*, jobs(*)').order('created_at', { ascending: false })),
             supabaseClient.from('transporters').select('id, company_name, contact_person, phone, banned_until, last_active_at'),
             supabaseClient.from('job_cancellations').select('job_id, transporter_id, delivery_date, cancelled_at'),
-            this.fetchAllRows(() => supabaseClient.from('jobs').select('id, rating, rated_at, rated_transporter_id').not('rating', 'is', null).order('id'))
+            this.fetchAllRows(() => supabaseClient.from('job_docs').select('job_id, rating, rated_at, rated_transporter_id').not('rating', 'is', null).order('job_id'))
         ]);
 
         if (bidsRes.error) {
@@ -3579,7 +3655,7 @@ const app = {
             transporters: tpRes.data || [],
             cancels: cancelRes.error ? [] : (cancelRes.data || []),
             cancelOk: !cancelRes.error,
-            ratings: ratingsRes.error ? [] : (ratingsRes.data || []).map(r => ({ job_id: r.id, transporter_id: r.rated_transporter_id, rating: r.rating, created_at: r.rated_at })),
+            ratings: ratingsRes.error ? [] : (ratingsRes.data || []).map(r => ({ job_id: r.job_id, transporter_id: r.rated_transporter_id, rating: r.rating, created_at: r.rated_at })),
             ratingsOk: !ratingsRes.error
         };
         const sig = JSON.stringify(data);
@@ -3673,14 +3749,9 @@ const app = {
             s.diffSum += Number(j.accepted_price ?? b.proposed_price) - Number(j.offered_price);
 
             const agreed = agreedOf(b);
-            if (j.do_url) {
+            if (ui.hasAllDos(j)) {
                 s.delivered++;
-                let ts = j.do_uploaded_at;
-                if (!ts) {
-                    const times = ui.parseDos(j).map(x => x.uploaded_at).filter(Boolean).sort();
-                    ts = times[times.length - 1];
-                }
-                const day = this.myDay(ts);
+                const day = this.myDay(ui.deliveredAt(j));
                 if (day && agreed) { if (day <= agreed) s.onTime++; else s.late++; }
             } else if (j.status === 'assigned') {
                 if (agreed && agreed < today) s.overdue++; else s.inProgress++;
@@ -3688,7 +3759,7 @@ const app = {
 
             // Where they go: pickup and every drop-off, each area counted once per job
             const seen = new Set();
-            [j.source_loc, j.dest_loc, ...ui.stops(j).map(x => x.loc)].forEach(t => {
+            [j.source_loc, ...ui.allStops(j).map(x => x.loc)].forEach(t => {
                 const r = this.regionOf(t);
                 if (!r || seen.has(r.key)) return;
                 seen.add(r.key);
