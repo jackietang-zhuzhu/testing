@@ -2440,10 +2440,9 @@ const app = {
         }).join('')}</ol>`;
     },
 
-    // Shown on a rejected order: why it was sent back, and what the customer can do next
+    // Shown on a rejected order: just "Rejected." plus a reminder to check the details before resubmitting
     rejectNotice(job) {
-        const reason = job.reject_reason ? ' ' + ui.esc(job.reject_reason) : '';
-        return `<div class="notice notice-stop" role="alert"><i class="ri-close-circle-line"></i><span><b>Rejected.</b>${reason}<br><span class="hint">Edit the order and resubmit it, or delete it.</span></span></div>`;
+        return `<div class="notice notice-stop" role="alert"><i class="ri-close-circle-line"></i><span><b>Rejected.</b><br><span class="hint">Please make sure all the details are correct before you resubmit.</span></span></div>`;
     },
 
     setCustomerFilter(key) {
