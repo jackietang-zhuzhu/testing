@@ -2320,24 +2320,6 @@ const app = {
         return jobs;
     },
 
-    // Adds job.contacts to the customer's own jobs if the customer_jobs view did not carry them. They come from the view customer_job_extras
-    // (the customer_jobs view itself is left alone). If it is not there yet the orders still show without them.
-    async attachJobExtras(jobs) {
-        if (!jobs || !jobs.length || this.noJobExtras) return jobs;
-        const { data, error } = await supabaseClient.from('customer_job_extras').select('job_id, contacts, dos');
-        if (error) {
-            console.error('Job extras load error:', error);
-            if (/does not exist|schema cache|relation/i.test(error.message || '')) this.noJobExtras = true; // stop asking until the page is reloaded
-            return jobs;
-        }
-        const byJob = new Map((data || []).map(r => [String(r.job_id), r]));
-        jobs.forEach(x => {
-            const r = byJob.get(String(x.id));
-            if (r && x.contacts == null) x.contacts = r.contacts;
-        });
-        return jobs;
-    },
-
     // ==========================================
     // --- CUSTOMER: rate the transporter (optional, after delivery) ---
     // One tap on a star saves the rating. The customer never sees who the transporter is:
