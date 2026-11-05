@@ -2496,7 +2496,7 @@ const app = {
             return `
                 <article class="job-card${open ? '' : ' is-collapsed'}" data-job="${id}">
                     <div class="job-head">
-                        ${pill}${poTag}
+                        <span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap">${pill}${poTag}</span>
                         <span class="job-time">${ui.jobNo(job)}${ui.posted(job.created_at, 'Ordered')}</span>
                     </div>
                     <div class="job-summary">
