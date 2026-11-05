@@ -204,9 +204,9 @@ const ui = {
             return w.toLowerCase().replace(/(^|[(\-\/])([a-z])/g, (m, p, c) => p + c.toUpperCase());
         }).join(' ');
     },
-    // ALL drop-offs of a job as one list, read from jobs.stops: [{ loc, link, do: { url, uploaded_at } | null }].
+    // ALL drop-offs of a job as one list, read from jobs.stops: [{ loc, link }].
     // stops[0] is the main drop-off, then the extra ones (at most 5 in total). Index i is the same number used by
-    // 'Drop-off i+1' and by contacts.drops[i] (person in charge + phone, still stored in jobs.contacts).
+    // 'Drop-off i+1', by the DO with stop = i in jobs.dos, and by contacts.drops[i] (person in charge + phone, jobs.contacts).
     allStops(job) {
         let raw = job && job.stops;
         if (typeof raw === 'string') { try { raw = JSON.parse(raw); } catch { raw = []; } }
@@ -217,7 +217,6 @@ const ui = {
             .map((s, i) => ({
                 loc: s.loc,
                 link: typeof s.link === 'string' ? s.link : '',
-                do: (s.do && typeof s.do === 'object' && s.do.url) ? { url: s.do.url, uploaded_at: s.do.uploaded_at } : null,
                 pic: (cs.drops[i] || {}).pic || '',
                 phone: (cs.drops[i] || {}).phone || ''
             }));
@@ -301,12 +300,20 @@ const ui = {
         return /\.pdf$/i.test(String(url || '').split(/[?#]/)[0]);
     },
     // ---- Delivery Orders (DO) ----
-    // Every drop-off in jobs.stops carries its own DO ({ url, uploaded_at } or null). The job counts as delivered
-    // once every drop-off has its DO.
+    // jobs.dos is one list for all drop-offs: [{ stop, url, uploaded_at }] (stop 0 = the main drop-off).
+    // The job counts as delivered once every drop-off has its DO.
     parseDos(job) {
-        return this.allStops(job)
-            .map((st, i) => ({ stop: i, url: app.safeUrl(st.do && st.do.url), uploaded_at: st.do && st.do.uploaded_at }))
-            .filter(d => d.url);
+        let raw = job && job.dos;
+        if (typeof raw === 'string') { try { raw = JSON.parse(raw); } catch { raw = null; } }
+        if (!Array.isArray(raw)) return [];
+        const total = this.allStops(job).length;
+        const byStop = new Map();
+        raw.forEach(d => {
+            const stop = Number(d && d.stop) || 0;
+            const url = app.safeUrl(d && d.url);
+            if (url && stop >= 0 && stop < total) byStop.set(stop, { stop, url, uploaded_at: d.uploaded_at });
+        });
+        return Array.from(byStop.values()).sort((a, b) => a.stop - b.stop);
     },
     dropLabel(job, i) {
         const drops = this.allStops(job);
@@ -1347,7 +1354,7 @@ const app = {
         // Automatically determine if it should go back to "assigned" or "open" based on its history
         // A job goes back to "assigned" if any sign of an award is left: assignment time, a DO,
         // an accepted bid, or a PO / invoice. Only a job with none of these goes back to "open".
-        const { data: job } = await supabaseClient.from('jobs').select('assigned_at, stops').eq('id', jobId).single();
+        const { data: job } = await supabaseClient.from('jobs').select('assigned_at, stops, dos').eq('id', jobId).single();
         let awarded = !!(job && (job.assigned_at || ui.parseDos(job).length));
         if (!awarded) {
             const [bidRes, docRes] = await Promise.all([
@@ -1893,13 +1900,8 @@ const app = {
             accepted_price: null,
             assigned_at: null
         };
-        // Undo also removes the uploaded DOs: keep every drop-off but clear its DO
-        let known = (this.rtJobsList || []).find(j => String(j.id) === String(jobId));
-        if (!known || !ui.allStops(known).length) {
-            known = (await supabaseClient.from('jobs').select('stops').eq('id', jobId).single()).data;
-        }
-        const clearedStops = ui.allStops(known).map(st => ({ loc: st.loc, link: st.link }));
-        if (clearedStops.length) reset.stops = clearedStops;
+        // Undo also removes the uploaded DOs
+        reset.dos = [];
         const { data: updatedJob, error: jobError } = await supabaseClient
             .from('jobs')
             .update(reset)
