@@ -1,11 +1,11 @@
 // ==========================================
 // 1. SUPABASE CONFIGURATION
 // ==========================================
-const SUPABASE_URL = 'https://xxjqzsaqbyaskiqvplrb.supabase.co';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh4anF6c2FxYnlhc2tpcXZwbHJiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI3MTY1MTksImV4cCI6MjEwODI5MjUxOX0.2B5IuAVjqCwBWJ_90JFVXKW_BLUv2Nwtiks_oOYYrq0'; 
+const SUPABASE_URL = 'https://cqbuguapyeyshujhkvky.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxYnVndWFweWV5c2h1amhrdmt5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ2OTI5NTQsImV4cCI6MjEwMDI2ODk1NH0.C2EuPMe1ijXCcgJ300iGs-yjyVOs4lC-TuwGu33WAsc';
 
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-const RT_ADMIN_EMAIL = 'testing@gmail.com';
+const RT_ADMIN_EMAIL = 'pyh@nbt.com';
 
 // ==========================================
 // 2. UI ELEMENTS MAPPING
@@ -3610,7 +3610,7 @@ const app = {
 
         const [bidsRes, tpRes, cancelRes, jobRatingsRes] = await Promise.all([
             this.fetchAllRows(() => supabaseClient.from('bids').select('*, jobs(*)').order('created_at', { ascending: false })),
-            supabaseClient.from('transporters').select('id, company_name, contact_person, phone, banned_until, last_active_at'),
+            supabaseClient.from('transporters').select('id, company_name, contact_person, phone, banned_until, last_active_at, usual_regions'),
             supabaseClient.from('job_cancellations').select('job_id, transporter_id, delivery_date, cancelled_at'),
             this.fetchAllRows(() => supabaseClient.from('jobs').select('id, rating, rated_at').not('rating', 'is', null).order('id'))
         ]);
@@ -3684,6 +3684,31 @@ const app = {
         const r = parts[parts.length - 1].trim();
         if (!r) return null;
         return { key: r.toLowerCase(), label: /^[A-Za-z]{2,3}$/.test(r) ? r.toUpperCase() : ui.place(r) };
+    },
+
+    // Usual regions as search terms. Adds common aliases so "Negeri Sembilan" finds "N9", "Pulau Pinang" finds "Penang", etc.
+    regionSearchTerms(regions) {
+        const aliases = {
+            'n9': ['negeri sembilan', 'ns'],
+            'negeri sembilan': ['n9', 'ns'],
+            'penang': ['pulau pinang', 'pg'],
+            'pulau pinang': ['penang', 'pg'],
+            'kl': ['kuala lumpur'],
+            'kuala lumpur': ['kl'],
+            'johor': ['jhr'],
+            'jhr': ['johor'],
+            'selangor': ['sel'],
+            'sel': ['selangor'],
+            'melaka': ['malacca', 'mlk'],
+            'malacca': ['melaka', 'mlk']
+        };
+        const out = [];
+        (Array.isArray(regions) ? regions : []).forEach(r => {
+            const t = String(r || '').trim().toLowerCase();
+            if (!t) return;
+            out.push(t, ...(aliases[t] || []));
+        });
+        return out;
     },
 
     renderTransporterStats() {
@@ -3774,7 +3799,7 @@ const app = {
         const rows = Object.keys(stats)
             .map(id => ({ id, s: stats[id], p: profiles.get(String(id)) || {} }))
             .filter(r => r.s.bids || r.s.cancelled)
-            .filter(r => !q || [r.p.company_name, r.p.contact_person].filter(Boolean).join(' ').toLowerCase().includes(q))
+            .filter(r => !q || [r.p.company_name, r.p.contact_person, ...this.regionSearchTerms(r.p.usual_regions)].filter(Boolean).join(' ').toLowerCase().includes(q))
             .sort((x, y) => (y.s.awarded - x.s.awarded) || (y.s.bids - x.s.bids) ||
                 String(x.p.company_name || '').localeCompare(String(y.p.company_name || '')));
 
@@ -3824,6 +3849,8 @@ const app = {
                         <div class="tp-line">${ui.stars(avgRating)}<span>${avgRating.toFixed(1)} out of 5 from ${plural(s.ratingCount, 'rating')}</span></div></div>`
                 : '';
 
+            const usualHtml = (Array.isArray(p.usual_regions) ? p.usual_regions : [])
+                .filter(Boolean).map(x => ui.esc(String(x))).join(' &middot; ');
             const places = Object.values(s.places).sort((x, y) => y.n - x.n || x.label.localeCompare(y.label)).slice(0, 4);
             const placesHtml = places.length
                 ? places.map(x => `${ui.esc(x.label)} <span class="hint">&times;${x.n}</span>`).join(' &middot; ')
@@ -3873,6 +3900,10 @@ const app = {
                         </div>
                         ${s.awarded ? `<div class="tp-line"><span>Awarded: ${s.atBudget} at our price, ${s.viaCounter} after counter-offer</span>${avgPill}</div>` : ''}
                     </div>
+                    ${usualHtml ? `<div class="remarks">
+                        <b>Usual regions</b>
+                        <div class="tp-line">${usualHtml}</div>
+                    </div>` : ''}
                     <div class="remarks">
                         <b>Common areas</b>
                         <div class="tp-line">${placesHtml}</div>
