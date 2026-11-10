@@ -606,6 +606,7 @@ const app = {
     myHistoryBids: [],
     tpData: null,            // Transporters tab: loaded bids, transporters, cancellations and ratings
     ratingBusy: null,        // customer: id of the order whose rating is being saved (blocks a second tap meanwhile)
+    tpSort: 'az',            // Transporters tab: 'az' = A to Z, 'most' = most jobs first
     tpMonth: '',             // Transporters tab: chosen month ('' = not chosen yet, 'all' = all time)
     cardOpen: {},            // customer Orders list: job id -> true (expanded) / false (collapsed). Survives auto-refresh.
     cardTouched: {},         // job ids the customer opened/closed themselves: only these are saved on the device
@@ -919,11 +920,11 @@ const app = {
                 <span class="label stop-title"></span>
                 <button type="button" class="btn btn-danger-ghost btn-sm" onclick="app.removeStop(this)"><i class="ri-close-line"></i> Remove</button>
             </div>
-            <input type="text" class="input stop-loc" placeholder="e.g. Skudai, JHR" aria-label="Extra drop-off location" maxlength="200" required>
-            <input type="url" class="input stop-link" placeholder="Map link (optional)" aria-label="Extra drop-off map link">
-            <div class="field-row">
-                <div class="field"><input type="text" class="input stop-pic" placeholder="Person in charge (optional)" aria-label="Extra drop-off person in charge" maxlength="80" autocomplete="off"></div>
-                <div class="field"><input type="tel" class="input stop-phone" placeholder="Contact number (optional)" aria-label="Extra drop-off contact number" inputmode="tel" minlength="7" maxlength="20" autocomplete="off"></div>
+            <label class="field float"><span class="label">Drop-off location</span><input type="text" class="input stop-loc" placeholder="e.g. Skudai, JHR" maxlength="200" required></label>
+            <label class="field float"><span class="label">Drop-off map link (optional)</span><input type="url" class="input stop-link" placeholder="https://maps.app.goo.gl/..."></label>
+            <div class="field-row wide-labels">
+                <label class="field float"><span class="label">Person in charge (optional)</span><input type="text" class="input stop-pic" placeholder="e.g. Mr Lim" maxlength="80" autocomplete="off"></label>
+                <label class="field float"><span class="label">Contact number (optional)</span><input type="tel" class="input stop-phone" placeholder="012-345 6789" inputmode="tel" minlength="7" maxlength="20" autocomplete="off"></label>
             </div>`;
         // values are set through the DOM, never pasted into HTML
         row.querySelector('.stop-loc').value = stop.loc || '';
@@ -2714,40 +2715,40 @@ const app = {
 
                 <fieldset class="fieldset">
                     <legend class="fieldset-title">Route</legend>
-                    <div class="field">
+                    <div class="field float">
                         <label class="label" for="rv-source">Pickup location</label>
-                        <input type="text" id="rv-source" class="input" required>
+                        <input type="text" id="rv-source" class="input" placeholder=" " required>
                     </div>
-                    <div class="field">
+                    <div class="field float">
                         <label class="label" for="rv-source-link">Pickup map link (optional)</label>
                         <input type="url" id="rv-source-link" placeholder="https://maps.app.goo.gl/..." class="input">
                     </div>
-                    <div class="field-row">
-                        <div class="field">
+                    <div class="field-row wide-labels">
+                        <div class="field float">
                             <label class="label" for="rv-source-pic">Pickup person in charge (optional)</label>
-                            <input type="text" id="rv-source-pic" class="input" maxlength="80" autocomplete="off">
+                            <input type="text" id="rv-source-pic" class="input" placeholder=" " maxlength="80" autocomplete="off">
                         </div>
-                        <div class="field">
+                        <div class="field float">
                             <label class="label" for="rv-source-phone">Pickup contact number (optional)</label>
-                            <input type="tel" id="rv-source-phone" class="input" inputmode="tel" minlength="7" maxlength="20" autocomplete="off">
+                            <input type="tel" id="rv-source-phone" class="input" placeholder=" " inputmode="tel" minlength="7" maxlength="20" autocomplete="off">
                         </div>
                     </div>
-                    <div class="field">
+                    <div class="field float">
                         <label class="label" for="rv-dest">Drop-off location</label>
-                        <input type="text" id="rv-dest" class="input" required>
+                        <input type="text" id="rv-dest" class="input" placeholder=" " required>
                     </div>
-                    <div class="field">
+                    <div class="field float">
                         <label class="label" for="rv-dest-link">Drop-off map link (optional)</label>
                         <input type="url" id="rv-dest-link" placeholder="https://maps.app.goo.gl/..." class="input">
                     </div>
-                    <div class="field-row">
-                        <div class="field">
+                    <div class="field-row wide-labels">
+                        <div class="field float">
                             <label class="label" for="rv-dest-pic">Drop-off person in charge (optional)</label>
-                            <input type="text" id="rv-dest-pic" class="input" maxlength="80" autocomplete="off">
+                            <input type="text" id="rv-dest-pic" class="input" placeholder=" " maxlength="80" autocomplete="off">
                         </div>
-                        <div class="field">
+                        <div class="field float">
                             <label class="label" for="rv-dest-phone">Drop-off contact number (optional)</label>
-                            <input type="tel" id="rv-dest-phone" class="input" inputmode="tel" minlength="7" maxlength="20" autocomplete="off">
+                            <input type="tel" id="rv-dest-phone" class="input" placeholder=" " inputmode="tel" minlength="7" maxlength="20" autocomplete="off">
                         </div>
                     </div>
                     <div id="rv-extra-stops" class="stack" style="gap:12px"></div>
@@ -2757,7 +2758,7 @@ const app = {
                 <fieldset class="fieldset">
                     <legend class="fieldset-title">Load</legend>
                     <div class="field-row">
-                        <div class="field" style="flex:2">
+                        <div class="field float" style="flex:2">
                             <label class="label" for="rv-item">Item</label>
                             <select id="rv-item" class="input" required onchange="app.toggleReviewOtherItem()">
                                 <option value="Jumbo Bags">Jumbo Bags</option>
@@ -2767,12 +2768,12 @@ const app = {
                                 <option value="Others">Others</option>
                             </select>
                         </div>
-                        <div class="field" style="flex:1">
+                        <div class="field float" style="flex:1">
                             <label class="label" for="rv-qty">Quantity</label>
-                            <input type="number" id="rv-qty" class="input" min="1" step="1" inputmode="numeric" required>
+                            <input type="number" id="rv-qty" class="input" placeholder=" " min="1" step="1" inputmode="numeric" required>
                         </div>
                     </div>
-                    <div class="field" id="rv-item-other-wrap" style="display:none">
+                    <div class="field float" id="rv-item-other-wrap" style="display:none">
                         <label class="label" for="rv-item-other">Others (please specify)</label>
                         <input type="text" id="rv-item-other" class="input" maxlength="100" placeholder="e.g. IBC Tank, Steel Rolls">
                     </div>
@@ -2785,13 +2786,13 @@ const app = {
                 <fieldset class="fieldset">
                     <legend class="fieldset-title">Schedule and price</legend>
                     <div class="field-row">
-                        <div class="field">
+                        <div class="field float">
                             <label class="label" for="rv-date">Delivery date</label>
                             <input type="date" id="rv-date" class="input" required>
                         </div>
-                        <div class="field">
+                        <div class="field float">
                             <label class="label" for="rv-price">Price to post (RM)</label>
-                            <input type="number" id="rv-price" class="input" min="1" step="any" inputmode="decimal" required>
+                            <input type="number" id="rv-price" class="input" placeholder=" " min="1" step="any" inputmode="decimal" required>
                             <span class="hint">Customer expected RM ${ui.money(expected)}.</span>
                             <a href="https://nbt-deliverycalc.netlify.app/" target="_blank" rel="noopener noreferrer" class="hint" style="color:var(--info);font-weight:600;text-decoration:none">
                                 <i class="ri-links-line"></i> Price guide
@@ -2802,9 +2803,9 @@ const app = {
 
                 <fieldset class="fieldset">
                     <legend class="fieldset-title">Notes</legend>
-                    <div class="field">
+                    <div class="field float">
                         <label class="label" for="rv-remarks">Remarks (optional)</label>
-                        <input type="text" id="rv-remarks" class="input">
+                        <input type="text" id="rv-remarks" class="input" placeholder=" ">
                     </div>
                 </fieldset>
 
@@ -3369,7 +3370,7 @@ const app = {
         if (!keys.length) { box.innerHTML = ''; return; }
         const chip = (key, label, n) =>
             `<button type="button" class="chip${key === active ? ' is-active' : ''}" data-month="${ui.esc(key)}" onclick="app.setRtMonth(this.dataset.month)">${ui.esc(label)} <span class="chip-count">${n}</span></button>`;
-        box.innerHTML = chip('', 'All', base.length) + keys.map(k => chip(k, this.monthLabel(k, true), counts[k] || 0)).join('');
+        box.innerHTML = chip('', 'All time', base.length) + keys.map(k => chip(k, this.monthLabel(k, true), counts[k] || 0)).join('');
     },
 
     renderRTJobs(allJobs) {
@@ -3397,7 +3398,7 @@ const app = {
         };
         const active = (this.rtTodo && counts[this.rtTodo] !== undefined) ? this.rtTodo : 'all';
         const todoChips = (counts.do + counts.po + counts.inv > 0 || active !== 'all')
-            ? `<div class="chips">${[['all', 'All'], ['do', 'Pending DO'], ['po', 'Pending PO'], ['inv', 'Pending INV']]
+            ? `<div class="chips">${[['all', 'All jobs'], ['do', 'Pending DO'], ['po', 'Pending PO'], ['inv', 'Pending INV']]
                 .filter(([key]) => key === 'all' || key === active || counts[key] > 0)
                 .map(([key, label]) => `<button type="button" class="chip${key === active ? ' is-active' : ''}" onclick="app.setRtTodo('${key}')">${label} <span class="chip-count">${counts[key]}</span></button>`)
                 .join('')}</div>`
@@ -3651,6 +3652,11 @@ const app = {
         this.renderTransporterStats();
     },
 
+    toggleTpSort() {
+        this.tpSort = this.tpSort === 'az' ? 'most' : 'az';
+        this.renderTransporterStats();
+    },
+
     setTpMonth(key) {
         this.tpMonth = key || 'all';
         this.renderTransporterStats();
@@ -3684,31 +3690,6 @@ const app = {
         const r = parts[parts.length - 1].trim();
         if (!r) return null;
         return { key: r.toLowerCase(), label: /^[A-Za-z]{2,3}$/.test(r) ? r.toUpperCase() : ui.place(r) };
-    },
-
-    // Usual regions as search terms. Adds common aliases so "Negeri Sembilan" finds "N9", "Pulau Pinang" finds "Penang", etc.
-    regionSearchTerms(regions) {
-        const aliases = {
-            'n9': ['negeri sembilan', 'ns'],
-            'negeri sembilan': ['n9', 'ns'],
-            'penang': ['pulau pinang', 'pg'],
-            'pulau pinang': ['penang', 'pg'],
-            'kl': ['kuala lumpur'],
-            'kuala lumpur': ['kl'],
-            'johor': ['jhr'],
-            'jhr': ['johor'],
-            'selangor': ['sel'],
-            'sel': ['selangor'],
-            'melaka': ['malacca', 'mlk'],
-            'malacca': ['melaka', 'mlk']
-        };
-        const out = [];
-        (Array.isArray(regions) ? regions : []).forEach(r => {
-            const t = String(r || '').trim().toLowerCase();
-            if (!t) return;
-            out.push(t, ...(aliases[t] || []));
-        });
-        return out;
     },
 
     renderTransporterStats() {
@@ -3795,13 +3776,29 @@ const app = {
         });
 
         const profiles = new Map(d.transporters.map(t => [String(t.id), t]));
+        // List every registered transporter, also those who have not bid yet (they show all zeros)
+        d.transporters.forEach(t => get(String(t.id)));
         const q = (document.getElementById('tp-search')?.value || '').trim().toLowerCase();
         const rows = Object.keys(stats)
             .map(id => ({ id, s: stats[id], p: profiles.get(String(id)) || {} }))
-            .filter(r => r.s.bids || r.s.cancelled)
-            .filter(r => !q || [r.p.company_name, r.p.contact_person, ...this.regionSearchTerms(r.p.usual_regions)].filter(Boolean).join(' ').toLowerCase().includes(q))
-            .sort((x, y) => (y.s.awarded - x.s.awarded) || (y.s.bids - x.s.bids) ||
-                String(x.p.company_name || '').localeCompare(String(y.p.company_name || '')));
+            .filter(r => {
+                if (!q) return true;
+                // Search by name, contact, the regions they registered (usual_regions) and the areas they actually delivered to
+                const regions = Array.isArray(r.p.usual_regions) ? r.p.usual_regions : [];
+                const areas = Object.values(r.s.places || {}).map(p => p.label);
+                const hay = [r.p.company_name, r.p.contact_person, ...regions, ...areas].filter(Boolean).join(' ').toLowerCase();
+                return q.split(/\s+/).filter(Boolean).every(w => hay.includes(w));
+            })
+            .sort((x, y) => {
+                const byName = String(x.p.company_name || '').localeCompare(String(y.p.company_name || ''), undefined, { sensitivity: 'base' });
+                if (this.tpSort === 'az') return byName;
+                return (y.s.awarded - x.s.awarded) || (y.s.bids - x.s.bids) || byName;
+            });
+
+        const sortBtn = document.getElementById('tp-sort');
+        if (sortBtn) sortBtn.innerHTML = this.tpSort === 'az'
+            ? '<i class="ri-sort-asc"></i> A to Z'
+            : '<i class="ri-bar-chart-horizontal-line"></i> Most jobs';
 
         const count = document.getElementById('tp-count');
         if (count) count.textContent = rows.length ? `${rows.length} transporter${rows.length === 1 ? '' : 's'}` : '';
@@ -3813,7 +3810,7 @@ const app = {
 
         if (!rows.length) {
             container.innerHTML = note + ui.empty('ri-truck-line', 'No transporter activity',
-                q ? 'No transporter matches this search.' : 'Nobody bid on jobs for this month.');
+                q ? 'No transporter matches this search.' : 'No transporters have registered yet.');
             return;
         }
 
@@ -3849,8 +3846,6 @@ const app = {
                         <div class="tp-line">${ui.stars(avgRating)}<span>${avgRating.toFixed(1)} out of 5 from ${plural(s.ratingCount, 'rating')}</span></div></div>`
                 : '';
 
-            const usualHtml = (Array.isArray(p.usual_regions) ? p.usual_regions : [])
-                .filter(Boolean).map(x => ui.esc(String(x))).join(' &middot; ');
             const places = Object.values(s.places).sort((x, y) => y.n - x.n || x.label.localeCompare(y.label)).slice(0, 4);
             const placesHtml = places.length
                 ? places.map(x => `${ui.esc(x.label)} <span class="hint">&times;${x.n}</span>`).join(' &middot; ')
@@ -3900,10 +3895,6 @@ const app = {
                         </div>
                         ${s.awarded ? `<div class="tp-line"><span>Awarded: ${s.atBudget} at our price, ${s.viaCounter} after counter-offer</span>${avgPill}</div>` : ''}
                     </div>
-                    ${usualHtml ? `<div class="remarks">
-                        <b>Usual regions</b>
-                        <div class="tp-line">${usualHtml}</div>
-                    </div>` : ''}
                     <div class="remarks">
                         <b>Common areas</b>
                         <div class="tp-line">${placesHtml}</div>
