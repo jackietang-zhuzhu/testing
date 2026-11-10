@@ -920,11 +920,11 @@ const app = {
                 <span class="label stop-title"></span>
                 <button type="button" class="btn btn-danger-ghost btn-sm" onclick="app.removeStop(this)"><i class="ri-close-line"></i> Remove</button>
             </div>
-            <label class="field float"><span class="label">Drop-off location</span><input type="text" class="input stop-loc" placeholder="e.g. Skudai, JHR" maxlength="200" required></label>
-            <label class="field float"><span class="label">Drop-off map link (optional)</span><input type="url" class="input stop-link" placeholder="https://maps.app.goo.gl/..."></label>
-            <div class="field-row wide-labels">
-                <label class="field float"><span class="label">Person in charge (optional)</span><input type="text" class="input stop-pic" placeholder="e.g. Mr Lim" maxlength="80" autocomplete="off"></label>
-                <label class="field float"><span class="label">Contact number (optional)</span><input type="tel" class="input stop-phone" placeholder="012-345 6789" inputmode="tel" minlength="7" maxlength="20" autocomplete="off"></label>
+            <input type="text" class="input stop-loc" placeholder="e.g. Skudai, JHR" aria-label="Extra drop-off location" maxlength="200" required>
+            <input type="url" class="input stop-link" placeholder="Map link (optional)" aria-label="Extra drop-off map link">
+            <div class="field-row">
+                <div class="field"><input type="text" class="input stop-pic" placeholder="Person in charge (optional)" aria-label="Extra drop-off person in charge" maxlength="80" autocomplete="off"></div>
+                <div class="field"><input type="tel" class="input stop-phone" placeholder="Contact number (optional)" aria-label="Extra drop-off contact number" inputmode="tel" minlength="7" maxlength="20" autocomplete="off"></div>
             </div>`;
         // values are set through the DOM, never pasted into HTML
         row.querySelector('.stop-loc').value = stop.loc || '';
@@ -2715,40 +2715,40 @@ const app = {
 
                 <fieldset class="fieldset">
                     <legend class="fieldset-title">Route</legend>
-                    <div class="field float">
+                    <div class="field">
                         <label class="label" for="rv-source">Pickup location</label>
-                        <input type="text" id="rv-source" class="input" placeholder=" " required>
+                        <input type="text" id="rv-source" class="input" required>
                     </div>
-                    <div class="field float">
+                    <div class="field">
                         <label class="label" for="rv-source-link">Pickup map link (optional)</label>
                         <input type="url" id="rv-source-link" placeholder="https://maps.app.goo.gl/..." class="input">
                     </div>
-                    <div class="field-row wide-labels">
-                        <div class="field float">
+                    <div class="field-row">
+                        <div class="field">
                             <label class="label" for="rv-source-pic">Pickup person in charge (optional)</label>
-                            <input type="text" id="rv-source-pic" class="input" placeholder=" " maxlength="80" autocomplete="off">
+                            <input type="text" id="rv-source-pic" class="input" maxlength="80" autocomplete="off">
                         </div>
-                        <div class="field float">
+                        <div class="field">
                             <label class="label" for="rv-source-phone">Pickup contact number (optional)</label>
-                            <input type="tel" id="rv-source-phone" class="input" placeholder=" " inputmode="tel" minlength="7" maxlength="20" autocomplete="off">
+                            <input type="tel" id="rv-source-phone" class="input" inputmode="tel" minlength="7" maxlength="20" autocomplete="off">
                         </div>
                     </div>
-                    <div class="field float">
+                    <div class="field">
                         <label class="label" for="rv-dest">Drop-off location</label>
-                        <input type="text" id="rv-dest" class="input" placeholder=" " required>
+                        <input type="text" id="rv-dest" class="input" required>
                     </div>
-                    <div class="field float">
+                    <div class="field">
                         <label class="label" for="rv-dest-link">Drop-off map link (optional)</label>
                         <input type="url" id="rv-dest-link" placeholder="https://maps.app.goo.gl/..." class="input">
                     </div>
-                    <div class="field-row wide-labels">
-                        <div class="field float">
+                    <div class="field-row">
+                        <div class="field">
                             <label class="label" for="rv-dest-pic">Drop-off person in charge (optional)</label>
-                            <input type="text" id="rv-dest-pic" class="input" placeholder=" " maxlength="80" autocomplete="off">
+                            <input type="text" id="rv-dest-pic" class="input" maxlength="80" autocomplete="off">
                         </div>
-                        <div class="field float">
+                        <div class="field">
                             <label class="label" for="rv-dest-phone">Drop-off contact number (optional)</label>
-                            <input type="tel" id="rv-dest-phone" class="input" placeholder=" " inputmode="tel" minlength="7" maxlength="20" autocomplete="off">
+                            <input type="tel" id="rv-dest-phone" class="input" inputmode="tel" minlength="7" maxlength="20" autocomplete="off">
                         </div>
                     </div>
                     <div id="rv-extra-stops" class="stack" style="gap:12px"></div>
@@ -2758,7 +2758,7 @@ const app = {
                 <fieldset class="fieldset">
                     <legend class="fieldset-title">Load</legend>
                     <div class="field-row">
-                        <div class="field float" style="flex:2">
+                        <div class="field" style="flex:2">
                             <label class="label" for="rv-item">Item</label>
                             <select id="rv-item" class="input" required onchange="app.toggleReviewOtherItem()">
                                 <option value="Jumbo Bags">Jumbo Bags</option>
@@ -2768,12 +2768,12 @@ const app = {
                                 <option value="Others">Others</option>
                             </select>
                         </div>
-                        <div class="field float" style="flex:1">
+                        <div class="field" style="flex:1">
                             <label class="label" for="rv-qty">Quantity</label>
-                            <input type="number" id="rv-qty" class="input" placeholder=" " min="1" step="1" inputmode="numeric" required>
+                            <input type="number" id="rv-qty" class="input" min="1" step="1" inputmode="numeric" required>
                         </div>
                     </div>
-                    <div class="field float" id="rv-item-other-wrap" style="display:none">
+                    <div class="field" id="rv-item-other-wrap" style="display:none">
                         <label class="label" for="rv-item-other">Others (please specify)</label>
                         <input type="text" id="rv-item-other" class="input" maxlength="100" placeholder="e.g. IBC Tank, Steel Rolls">
                     </div>
@@ -2786,13 +2786,13 @@ const app = {
                 <fieldset class="fieldset">
                     <legend class="fieldset-title">Schedule and price</legend>
                     <div class="field-row">
-                        <div class="field float">
+                        <div class="field">
                             <label class="label" for="rv-date">Delivery date</label>
                             <input type="date" id="rv-date" class="input" required>
                         </div>
-                        <div class="field float">
+                        <div class="field">
                             <label class="label" for="rv-price">Price to post (RM)</label>
-                            <input type="number" id="rv-price" class="input" placeholder=" " min="1" step="any" inputmode="decimal" required>
+                            <input type="number" id="rv-price" class="input" min="1" step="any" inputmode="decimal" required>
                             <span class="hint">Customer expected RM ${ui.money(expected)}.</span>
                             <a href="https://nbt-deliverycalc.netlify.app/" target="_blank" rel="noopener noreferrer" class="hint" style="color:var(--info);font-weight:600;text-decoration:none">
                                 <i class="ri-links-line"></i> Price guide
@@ -2803,9 +2803,9 @@ const app = {
 
                 <fieldset class="fieldset">
                     <legend class="fieldset-title">Notes</legend>
-                    <div class="field float">
+                    <div class="field">
                         <label class="label" for="rv-remarks">Remarks (optional)</label>
-                        <input type="text" id="rv-remarks" class="input" placeholder=" ">
+                        <input type="text" id="rv-remarks" class="input">
                     </div>
                 </fieldset>
 

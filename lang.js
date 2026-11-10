@@ -67,11 +67,11 @@
         "Completed jobs (the latest 200). Pick a delivery month to narrow down.": "Kerja selesai (200 terkini). Pilih bulan penghantaran untuk mengecilkan senarai.",
         "Jobs, timing and pricing for each transporter.": "Kerja, ketepatan masa dan harga bagi setiap pengangkut.",
         "Search transporter...": "Cari pengangkut...",
+        "Search name or area...": "Cari nama atau kawasan...",
         "Search transporters": "Cari pengangkut",
-        "Search name or region...": "Cari nama atau kawasan...",
-        "Search transporters by name or region": "Cari pengangkut mengikut nama atau kawasan",
-        "Usual regions": "Kawasan biasa",
         "Delivery month": "Bulan penghantaran",
+        "A to Z": "A hingga Z",
+        "Most jobs": "Paling banyak kerja",
         "On time means the DO was uploaded on or before the agreed delivery date. Taken back means you pressed Undo on a job that was awarded to them. The star score is the average of the optional ratings customers give after a delivery.": "Tepat masa bermaksud DO dimuat naik pada atau sebelum tarikh penghantaran yang dipersetujui. Ditarik balik bermaksud anda menekan Undo pada kerja yang telah dipilih untuk mereka. Skor bintang ialah purata penilaian pilihan yang diberikan pelanggan selepas penghantaran.",
         "Back to active jobs": "Kembali ke kerja aktif",
         "Back to requests": "Kembali ke permintaan",
@@ -83,6 +83,7 @@
         "This month": "Bulan ini",
         "No date": "Tiada tarikh",
         "All time": "Sepanjang masa",
+        "All jobs": "Semua kerja",
 
         // ----- forms (post job, customer order, admin review) -----
         "Post a job": "Iklankan satu kerja",
