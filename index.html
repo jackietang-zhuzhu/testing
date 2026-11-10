@@ -185,7 +185,7 @@
             <div class="filter-bar">
                 <div class="search-box">
                     <i class="ri-search-line"></i>
-                    <input type="search" id="tp-search" class="input" placeholder="Search name or region..." autocomplete="off" aria-label="Search transporters by name or region" oninput="app.renderTransporterStats()">
+                    <input type="search" id="tp-search" class="input" placeholder="Search name or area..." autocomplete="off" aria-label="Search transporters" oninput="app.renderTransporterStats()">
                 </div>
                 <div class="field">
                     <label class="label" for="tp-month">Delivery month</label>
@@ -193,6 +193,7 @@
                 </div>
                 <div class="filter-meta">
                     <span class="hint" id="tp-count"></span>
+                    <button type="button" id="tp-sort" class="btn btn-secondary btn-sm" onclick="app.toggleTpSort()"></button>
                 </div>
                 <span class="hint">On time means the DO was uploaded on or before the agreed delivery date. Taken back means you pressed Undo on a job that was awarded to them. The star score is the average of the optional ratings customers give after a delivery.</span>
             </div>
@@ -210,38 +211,38 @@
 
                 <fieldset class="fieldset">
                     <legend class="fieldset-title">Route</legend>
-                    <div class="field">
+                    <div class="field float">
                         <label class="label" for="job-source">Pickup location</label>
                         <input type="text" id="job-source" placeholder="e.g. Petaling Jaya, SEL" class="input" required>
                     </div>
-                    <div class="field">
+                    <div class="field float">
                         <label class="label" for="job-source-link">Pickup map link (optional)</label>
                         <input type="url" id="job-source-link" placeholder="https://maps.app.goo.gl/..." class="input">
                     </div>
-                    <div class="field-row">
-                        <div class="field">
+                    <div class="field-row wide-labels">
+                        <div class="field float">
                             <label class="label" for="job-source-pic">Pickup person in charge (optional)</label>
                             <input type="text" id="job-source-pic" class="input" maxlength="80" placeholder="e.g. Mr Lim" autocomplete="off">
                         </div>
-                        <div class="field">
+                        <div class="field float">
                             <label class="label" for="job-source-phone">Pickup contact number (optional)</label>
                             <input type="tel" id="job-source-phone" class="input" inputmode="tel" minlength="7" maxlength="20" placeholder="012-345 6789" autocomplete="off">
                         </div>
                     </div>
-                    <div class="field">
+                    <div class="field float">
                         <label class="label" for="job-dest">Drop-off location</label>
                         <input type="text" id="job-dest" placeholder="e.g. Johor Bahru, JHR" class="input" required>
                     </div>
-                    <div class="field">
+                    <div class="field float">
                         <label class="label" for="job-dest-link">Drop-off map link (optional)</label>
                         <input type="url" id="job-dest-link" placeholder="https://maps.app.goo.gl/..." class="input">
                     </div>
-                    <div class="field-row">
-                        <div class="field">
+                    <div class="field-row wide-labels">
+                        <div class="field float">
                             <label class="label" for="job-dest-pic">Drop-off person in charge (optional)</label>
                             <input type="text" id="job-dest-pic" class="input" maxlength="80" placeholder="e.g. Mr Lim" autocomplete="off">
                         </div>
-                        <div class="field">
+                        <div class="field float">
                             <label class="label" for="job-dest-phone">Drop-off contact number (optional)</label>
                             <input type="tel" id="job-dest-phone" class="input" inputmode="tel" minlength="7" maxlength="20" placeholder="012-345 6789" autocomplete="off">
                         </div>
@@ -254,7 +255,7 @@
                 <fieldset class="fieldset">
                     <legend class="fieldset-title">Load</legend>
                     <div class="field-row">
-                        <div class="field" style="flex:2">
+                        <div class="field float" style="flex:2">
                             <label class="label" for="job-item">Item</label>
                             <select id="job-item" class="input" required>
                                 <option value="Jumbo Bags">Jumbo Bags</option>
@@ -264,12 +265,12 @@
                                 <option value="Others">Others</option>
                             </select>
                         </div>
-                        <div class="field" style="flex:1">
+                        <div class="field float" style="flex:1">
                             <label class="label" for="job-qty">Quantity</label>
-                            <input type="number" id="job-qty" class="input" min="1" step="1" inputmode="numeric" required>
+                            <input type="number" id="job-qty" class="input" placeholder=" " min="1" step="1" inputmode="numeric" required>
                         </div>
                     </div>
-                    <div class="field" id="job-item-other-wrap" style="display:none">
+                    <div class="field float" id="job-item-other-wrap" style="display:none">
                         <label class="label" for="job-item-other">Others (please specify)</label>
                         <input type="text" id="job-item-other" class="input" maxlength="100" placeholder="e.g. IBC Tank, Steel Rolls">
                     </div>
@@ -282,11 +283,11 @@
                 <fieldset class="fieldset">
                     <legend class="fieldset-title">Schedule and price</legend>
                     <div class="field-row">
-                        <div class="field">
+                        <div class="field float">
                             <label class="label" for="job-date">Delivery date</label>
                             <input type="date" id="job-date" class="input" required>
                         </div>
-                        <div class="field">
+                        <div class="field float">
                             <label class="label" for="job-price">Price (RM)</label>
                             <input type="number" id="job-price" placeholder="850" class="input" min="1" step="any" inputmode="decimal" required>
                             <a href="https://nbt-deliverycalc.netlify.app/" target="_blank" rel="noopener noreferrer" class="hint" style="color:var(--info);font-weight:600;text-decoration:none">
@@ -308,7 +309,7 @@
                             <input type="file" id="job-photo-2" accept="image/*" class="input">
                         </div>
                     </div>
-                    <div class="field">
+                    <div class="field float">
                         <label class="label" for="job-remarks">Remarks (optional)</label>
                         <input type="text" id="job-remarks" placeholder="e.g. Handle with care" class="input">
                     </div>
@@ -361,11 +362,11 @@
 
                 <fieldset class="fieldset">
                     <legend class="fieldset-title">Route</legend>
-                    <div class="field">
+                    <div class="field float">
                         <label class="label" for="cj-source">Pickup location</label>
                         <input type="text" id="cj-source" placeholder="e.g. Petaling Jaya, SEL" class="input" required>
                     </div>
-                    <div class="field">
+                    <div class="field float">
                         <label class="label" for="cj-source-link">Pickup map link (optional)</label>
                         <input type="url" id="cj-source-link" placeholder="https://maps.app.goo.gl/..." class="input">
                     </div>
@@ -380,30 +381,30 @@
                             <span>Save this pickup as my primary address</span>
                         </label>
                     </div>
-                    <div class="field-row">
-                        <div class="field">
+                    <div class="field-row wide-labels">
+                        <div class="field float">
                             <label class="label" for="cj-source-pic">Pickup person in charge (optional)</label>
                             <input type="text" id="cj-source-pic" class="input" maxlength="80" placeholder="e.g. Mr Lim" autocomplete="off">
                         </div>
-                        <div class="field">
+                        <div class="field float">
                             <label class="label" for="cj-source-phone">Pickup contact number (optional)</label>
                             <input type="tel" id="cj-source-phone" class="input" inputmode="tel" minlength="7" maxlength="20" placeholder="012-345 6789" autocomplete="off">
                         </div>
                     </div>
-                    <div class="field">
+                    <div class="field float">
                         <label class="label" for="cj-dest">Drop-off location</label>
                         <input type="text" id="cj-dest" placeholder="e.g. Johor Bahru, JHR" class="input" required>
                     </div>
-                    <div class="field">
+                    <div class="field float">
                         <label class="label" for="cj-dest-link">Drop-off map link (optional)</label>
                         <input type="url" id="cj-dest-link" placeholder="https://maps.app.goo.gl/..." class="input">
                     </div>
-                    <div class="field-row">
-                        <div class="field">
+                    <div class="field-row wide-labels">
+                        <div class="field float">
                             <label class="label" for="cj-dest-pic">Drop-off person in charge (optional)</label>
                             <input type="text" id="cj-dest-pic" class="input" maxlength="80" placeholder="e.g. Mr Lim" autocomplete="off">
                         </div>
-                        <div class="field">
+                        <div class="field float">
                             <label class="label" for="cj-dest-phone">Drop-off contact number (optional)</label>
                             <input type="tel" id="cj-dest-phone" class="input" inputmode="tel" minlength="7" maxlength="20" placeholder="012-345 6789" autocomplete="off">
                         </div>
@@ -416,7 +417,7 @@
                 <fieldset class="fieldset">
                     <legend class="fieldset-title">Load</legend>
                     <div class="field-row">
-                        <div class="field" style="flex:2">
+                        <div class="field float" style="flex:2">
                             <label class="label" for="cj-item">Item</label>
                             <select id="cj-item" class="input" required>
                                 <option value="Jumbo Bags">Jumbo Bags</option>
@@ -426,12 +427,12 @@
                                 <option value="Others">Others</option>
                             </select>
                         </div>
-                        <div class="field" style="flex:1">
+                        <div class="field float" style="flex:1">
                             <label class="label" for="cj-qty">Quantity</label>
-                            <input type="number" id="cj-qty" class="input" min="1" step="1" inputmode="numeric" required>
+                            <input type="number" id="cj-qty" class="input" placeholder=" " min="1" step="1" inputmode="numeric" required>
                         </div>
                     </div>
-                    <div class="field" id="cj-item-other-wrap" style="display:none">
+                    <div class="field float" id="cj-item-other-wrap" style="display:none">
                         <label class="label" for="cj-item-other">Others (please specify)</label>
                         <input type="text" id="cj-item-other" class="input" maxlength="100" placeholder="e.g. IBC Tank, Steel Rolls">
                     </div>
@@ -444,11 +445,11 @@
                 <fieldset class="fieldset">
                     <legend class="fieldset-title">Schedule and price</legend>
                     <div class="field-row">
-                        <div class="field">
+                        <div class="field float">
                             <label class="label" for="cj-date">Delivery date</label>
                             <input type="date" id="cj-date" class="input" required>
                         </div>
-                        <div class="field">
+                        <div class="field float">
                             <label class="label" for="cj-price">Expected price (RM)</label>
                             <input type="number" id="cj-price" placeholder="850" class="input" min="1" step="any" inputmode="decimal" required>
                             <span class="hint">What you are willing to pay for this delivery.</span>
@@ -469,7 +470,7 @@
                         </div>
                     </div>
                     <span class="hint" id="cj-photo-hint" style="display:none">Leave the photos empty to keep the current ones.</span>
-                    <div class="field">
+                    <div class="field float">
                         <label class="label" for="cj-remarks">Remarks (optional)</label>
                         <input type="text" id="cj-remarks" placeholder="e.g. Handle with care" class="input">
                     </div>
